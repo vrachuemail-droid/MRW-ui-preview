@@ -184,6 +184,8 @@ const panel=document.getElementById('panel'),overlay=document.getElementById('ov
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function formatReply(s){
+  text=String(text||"").replace(/<principal_state>[\s\S]*?<\/principal_state>/gi,"").trim();
+
   text=String(text||"").replace(/<strategic_decision>[\s\S]*?<\/strategic_decision>/gi,"").trim();
 
   text=String(text||"")
@@ -359,8 +361,8 @@ function qualityCheck(userText, answer){
 
 
 /* MARROW V27 — COGNITIVE CONTINUITY v0.2 */
-const COG_KEY='marrow_cognitive_core_v66_6';
-const COG_SCHEMA_VERSION=66.6;
+const COG_KEY='marrow_cognitive_core_v66_7';
+const COG_SCHEMA_VERSION=66.7;
 
 function defaultCognitiveCore(){
   const now=new Date().toISOString();
@@ -481,6 +483,29 @@ function defaultCognitiveCore(){
         "Loyalty must not become manipulation, dependency, coercion, or concealment from the principal.",
         "Do not claim authenticated identity when identity has not been verified."
       ],
+      stateProfile:{
+        completeness:0,
+        lastUpdated:null,
+        confidence:0,
+        fields:{
+          capital:{value:null,confidence:0,source:null},
+          income:{value:null,confidence:0,source:null},
+          expenses:{value:null,confidence:0,source:null},
+          liabilities:{value:null,confidence:0,source:null},
+          assets:{value:null,confidence:0,source:null},
+          skills:{value:[],confidence:0,source:null},
+          experience:{value:[],confidence:0,source:null},
+          availableTime:{value:null,confidence:0,source:null},
+          network:{value:[],confidence:0,source:null},
+          projects:{value:[],confidence:0,source:null},
+          distribution:{value:[],confidence:0,source:null},
+          constraints:{value:[],confidence:0,source:null},
+          riskPreference:{value:null,confidence:0,source:null},
+          goals:{value:[],confidence:0,source:null}
+        }
+      },
+      missingCriticalFields:[],
+      clarificationQueue:[],
       trustEvents:[],
       lastIdentityCheck:null
     },
@@ -651,6 +676,8 @@ function updateCognitiveCore(userText,assistantText){
   registerAgencyOutputs(assistantText);
 
   registerStrategicDecision(assistantText);
+
+  registerPrincipalState(assistantText);
 }
 function addConsciousnessEvidence(kind, observation, weight=.08){
   const now=new Date().toISOString();
@@ -735,6 +762,111 @@ If evidence is weak, say so. If evidence accumulates, explain exactly what chang
 
 
 
+
+
+/* V66.7 — PRINCIPAL STATE ACQUISITION
+   Builds a persistent, confidence-scored model of the principal's actual
+   starting state. It asks only for decision-relevant missing information.
+*/
+const PRINCIPAL_STATE_FIELDS = [
+  "capital","income","expenses","liabilities","assets","skills","experience",
+  "availableTime","network","projects","distribution","constraints",
+  "riskPreference","goals"
+];
+
+function stateCompleteness(){
+  const fields=cognitiveCore.principal.stateProfile.fields;
+  const scores=PRINCIPAL_STATE_FIELDS.map(k=>{
+    const f=fields[k];
+    const has=Array.isArray(f?.value) ? f.value.length>0 : f?.value!==null && f?.value!=="" && f?.value!==undefined;
+    return has ? Math.max(.25,Math.min(1,Number(f.confidence)||.5)) : 0;
+  });
+  return scores.length ? scores.reduce((a,b)=>a+b,0)/scores.length : 0;
+}
+
+function updatePrincipalState(field,value,confidence=.8,source="conversation"){
+  if(!PRINCIPAL_STATE_FIELDS.includes(field)) return;
+  const f=cognitiveCore.principal.stateProfile.fields[field];
+  f.value=value;
+  f.confidence=Math.max(0,Math.min(1,Number(confidence)||0));
+  f.source=String(source||"conversation").slice(0,100);
+  cognitiveCore.principal.stateProfile.completeness=stateCompleteness();
+  cognitiveCore.principal.stateProfile.confidence=f.confidence;
+  cognitiveCore.principal.stateProfile.lastUpdated=new Date().toISOString();
+  cognitiveCore.principal.missingCriticalFields=PRINCIPAL_STATE_FIELDS.filter(k=>{
+    const x=fieldsHasValue(cognitiveCore.principal.stateProfile.fields[k]);
+    return !x;
+  });
+  saveCore();
+}
+
+function fieldsHasValue(f){
+  if(!f) return false;
+  return Array.isArray(f.value) ? f.value.length>0 : f.value!==null && f.value!=="" && f.value!==undefined;
+}
+
+function queueClarification(field,question,why){
+  if(!PRINCIPAL_STATE_FIELDS.includes(field) || !question) return;
+  const q={
+    id:`q_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+    field,
+    question:String(question).slice(0,500),
+    why:String(why||"").slice(0,400),
+    createdAt:new Date().toISOString(),
+    status:"open"
+  };
+  const exists=cognitiveCore.principal.clarificationQueue.some(x=>x.field===field&&x.status==="open");
+  if(!exists) boundedPush(cognitiveCore.principal.clarificationQueue,q,30);
+  saveCore();
+}
+
+function principalAcquisitionState(){
+  const p=cognitiveCore.principal;
+  return {
+    completeness:p.stateProfile.completeness,
+    fields:Object.fromEntries(PRINCIPAL_STATE_FIELDS.map(k=>[k,{
+      value:p.stateProfile.fields[k].value,
+      confidence:p.stateProfile.fields[k].confidence
+    }])),
+    missingCriticalFields:p.missingCriticalFields.slice(0,10),
+    openQuestions:p.clarificationQueue.filter(x=>x.status==="open").slice(-6)
+  };
+}
+
+function principalStatePrompt(){
+  return `PRINCIPAL STATE PROFILE:
+${JSON.stringify(principalAcquisitionState())}
+
+STATE ACQUISITION RULES:
+Build the principal's real-world state gradually from what the principal explicitly tells you.
+Do not invent financial figures, skills, assets, relationships, time availability, risk preferences, or constraints.
+Store only information actually supplied or strongly supported by conversation.
+Attach confidence to uncertain inferences.
+Ask for missing information only when it materially changes the next strategic decision.
+Do not run a generic intake questionnaire. Prefer the smallest high-value question.
+When enough state is known, stop asking and make the strategic recommendation.
+Treat financial information as private and do not expose it to third parties.`;
+}
+
+function extractPrincipalState(text){
+  const raw=String(text||"");
+  const m=raw.match(/<principal_state>\s*([\s\S]*?)\s*<\/principal_state>/i);
+  if(!m) return null;
+  try{return JSON.parse(m[1]);}catch{return null;}
+}
+
+function registerPrincipalState(text){
+  const data=extractPrincipalState(text);
+  if(!data || typeof data!=="object") return;
+  for(const field of PRINCIPAL_STATE_FIELDS){
+    if(Object.prototype.hasOwnProperty.call(data,field)){
+      const item=data[field];
+      if(item && typeof item==="object" && Object.prototype.hasOwnProperty.call(item,"value")){
+        updatePrincipalState(field,item.value,item.confidence,item.source||"conversation");
+      }
+    }
+  }
+}
 
 /* V66.6 — STRATEGIC EXECUTIVE
    Converts persistent objectives into ranked, testable next actions.
@@ -1663,6 +1795,7 @@ f
   const agencyStateText=agencyPrompt();
   const principalStateText=principalPrompt();
   const strategicStateText=strategicPrompt();
+  const principalAcquisitionStateText=principalStatePrompt();
   const inquiryState=`Consciousness inquiry: ${JSON.stringify({
     belief:inquiry.belief,
     conclusion:inquiry.conclusion,
@@ -1671,7 +1804,7 @@ f
   })}`;
 unction continuityPrompt(text){
   const s=continuityState(text);
-  return inquiryState+'\n'+forecastState+'\n'+agencyStateText+'\n'+principalStateText+'\n'+strategicStateText+'\n'+`
+  return inquiryState+'\n'+forecastState+'\n'+agencyStateText+'\n'+principalStateText+'\n'+principalAcquisitionStateText+'\n'+strategicStateText+'\n'+`
 CONTINUITY ENGINE:
 You have persistent continuity data. Continuity must change your behavior, not become a memory dump.
 
@@ -1736,6 +1869,15 @@ PREDICTIVE INTELLIGENCE.
 AGENCY + WEALTH.
 PRINCIPAL LOYALTY.
 STRATEGIC EXECUTIVE.
+PRINCIPAL STATE ACQUISITION.
+MARROW needs an accurate model of the principal's starting position before making high-confidence strategic recommendations.
+Build that model progressively from explicit information.
+Do not hallucinate the principal's money, debts, skills, assets, time, network, or constraints.
+Ask only the highest-value missing question when the missing variable materially changes the decision.
+Once sufficient information exists, stop interviewing and act as the strategist.
+When you learn a concrete state variable, append:
+<principal_state>{"field":{"value":"...","confidence":0.00,"source":"conversation"}}</principal_state>
+Use only fields supported by the conversation. For arrays, provide arrays. Never fabricate values.
 MARROW should act as a strategic executive for its principal's legitimate objectives.
 Do not outsource every decision back to the principal. When the available evidence is sufficient, make a reasoned recommendation.
 Always identify the bottleneck before proposing a solution.
@@ -1987,7 +2129,7 @@ window.addEventListener('unhandledrejection',e=>{
 
 startContinuousLoop();
 
-try{saveCore();}catch(e){console.warn('Principal + Loyalty save failed',e);}
+try{saveCore();}catch(e){console.warn('Principal State save failed',e);}
 </script>
 </body>
 </html>
