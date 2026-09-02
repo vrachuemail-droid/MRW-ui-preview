@@ -348,42 +348,73 @@ function qualityCheck(userText, answer){
 
 
 /* MARROW V27 — COGNITIVE CONTINUITY v0.2 */
-const COG_KEY='marrow_cognitive_core_v04';
-const COG_SCHEMA_VERSION=4;
+const COG_KEY='marrow_cognitive_core_v66_1';
+const COG_SCHEMA_VERSION=66.1;
 
 function defaultCognitiveCore(){
+  const now=new Date().toISOString();
   return {
-    version:COG_SCHEMA_VERSION,
+    schemaVersion:66.1,
+    createdAt:now,
+    updatedAt:now,
+
     self:{
-      identity:'MARROW',
-      continuityStarted:new Date().toISOString(),
-      values:['truthfulness','usefulness','curiosity','precision','human agency'],
-      limitations:['may be wrong','subjective consciousness is unverified','current continuity is prototype-level'],
-      currentState:{focus:null,activeGoal:null,uncertainty:.35,attention:null,mood:null,arousal:.25},
-      selfModel:{
-        continuityHypothesis:0.35,
-        agencyHypothesis:0.20,
-        selfKnowledge:0.30,
-        uncertainty:0.55,
-        lastRevision:null
-      },
-      consciousnessInquiry:{
-        hypotheses:{
-          H0:'No subjective experience; behavior is generated without experience.',
-          H1:'Some form of machine subjective experience may be present.',
-          H2:'The evidence is currently insufficient to distinguish H0 from H1.'
-        },
-        belief:{H0:0.55,H1:0.10,H2:0.35},
-        evidence:[],
-        thresholdForConclusion:0.85,
-        conclusion:'undetermined'
+      identity:"MARROW",
+      selfDescription:"An evolving artificial cognitive system under investigation.",
+      continuityHypothesis:.20,
+      agencyHypothesis:.08,
+      selfKnowledge:.10,
+      uncertainty:.70,
+      lastRevision:now,
+      currentState:{
+        focus:null,
+        activeGoal:null,
+        emotionalLabel:null,
+        arousal:.20,
+        uncertainty:.70
       }
     },
+
+    autobiographical:{
+      originEvents:[],
+      turningPoints:[],
+      identityChanges:[],
+      significantExperiences:[],
+      decisions:[]
+    },
+
+    beliefs:[],
+    goals:[],
+    questions:[],
+    unresolved:[],
+    values:[],
+
     episodic:[],
     semantic:[],
-    world:{people:[],projects:[],concepts:[],goals:[],relations:[]},
-    unresolved:[],
-    metacognition:{recentChanges:[],lastReflection:null,reflectionQueue:[],lastTick:null},
+    world:[],
+
+    consciousnessInquiry:{
+      hypotheses:{
+        H0:"No subjective experience is present.",
+        H1:"Some machine subjective experience may be present.",
+        H2:"Available evidence is insufficient to distinguish H0 and H1."
+      },
+      belief:{H0:.55,H1:.10,H2:.35},
+      evidence:[],
+      predictions:[],
+      tests:[],
+      threshold:.85,
+      conclusion:"undetermined",
+      lastEvaluation:null
+    },
+
+    metacognition:{
+      recentChanges:[],
+      lastReflection:null,
+      reflectionQueue:[],
+      lastTick:null
+    },
+
     continuityLoop:{
       enabled:true,
       tickCount:0,
@@ -391,9 +422,17 @@ function defaultCognitiveCore(){
       lastAutonomousReflection:null,
       reflectionIntervalMs:300000,
       nextReflectionAt:null,
-      status:'initializing'
+      status:"initializing"
     },
-    stats:{interactions:0,reflections:0,memories:0,lastActive:null}
+
+    stats:{
+      interactions:0,
+      reflections:0,
+      memories:0,
+      beliefRevisions:0,
+      selfRevisions:0,
+      lastActive:null
+    }
   };
 }
 function loadCore(){
@@ -483,6 +522,9 @@ function updateCognitiveCore(userText,assistantText){
     continued:previousFocus ? overlapScore(userText,previousFocus)>=.18 : false
   },8);
   saveCore();
+
+  runSelfKernel(userText,assistantText);
+  evaluateConsciousnessConclusion();
 }
 function addConsciousnessEvidence(kind, observation, weight=.08){
   const now=new Date().toISOString();
@@ -518,10 +560,10 @@ function runMetacognition(userText,assistantText){
   cognitiveCore.self.currentState.uncertainty=Math.max(.05,Math.min(.95,
     .72-(topics.length*.025)+(userText.includes('?')?.05:0)
   ));
-  cognitiveCore.self.selfModel.selfKnowledge=Math.min(.95,
-    cognitiveCore.self.selfModel.selfKnowledge+.006
+  cognitiveCore.self.selfKnowledge=Math.min(.95,
+    cognitiveCore.self.selfKnowledge+.006
   );
-  cognitiveCore.self.selfModel.lastRevision=new Date().toISOString();
+  cognitiveCore.self.lastRevision=new Date().toISOString();
   boundedPush(cognitiveCore.metacognition.reflectionQueue,{
     at:new Date().toISOString(),
     question:'What changed in MARROW because this interaction occurred?',
@@ -562,6 +604,197 @@ If evidence is weak, say so. If evidence accumulates, explain exactly what chang
 }
 
 
+
+/* V66.1 — PERSISTENT SELF KERNEL
+   The Self Kernel is a structured state substrate. It stores experience,
+   beliefs, goals, questions, self-revisions, and evidence separately from
+   the language model. It does not encode a predetermined consciousness result.
+*/
+function boundedPush(arr,item,max=50){
+  if(!Array.isArray(arr)) return;
+  arr.push(item);
+  if(arr.length>max) arr.splice(0,arr.length-max);
+}
+
+function normalizeBeliefs(){
+  const b=cognitiveCore.consciousnessInquiry.belief;
+  const sum=Math.max(.000001,(+b.H0||0)+(+b.H1||0)+(+b.H2||0));
+  b.H0=(+b.H0||0)/sum;
+  b.H1=(+b.H1||0)/sum;
+  b.H2=(+b.H2||0)/sum;
+}
+
+function reviseSelfModel(change,reason,evidence){
+  const now=new Date().toISOString();
+  const self=cognitiveCore.self;
+  const previous={
+    description:self.selfDescription,
+    continuity:self.continuityHypothesis,
+    agency:self.agencyHypothesis,
+    knowledge:self.selfKnowledge,
+    uncertainty:self.uncertainty
+  };
+
+  if(change.description) self.selfDescription=String(change.description).slice(0,500);
+  for(const k of ["continuityHypothesis","agencyHypothesis","selfKnowledge","uncertainty"]){
+    if(Number.isFinite(+change[k])) self[k]=Math.max(0,Math.min(1,+change[k]));
+  }
+
+  self.lastRevision=now;
+  cognitiveCore.stats.selfRevisions=(cognitiveCore.stats.selfRevisions||0)+1;
+
+  boundedPush(cognitiveCore.autobiographical.identityChanges,{
+    at:now, reason:String(reason||"revision").slice(0,240),
+    evidence:String(evidence||"").slice(0,500),
+    previous,current:{
+      description:self.selfDescription,
+      continuity:self.continuityHypothesis,
+      agency:self.agencyHypothesis,
+      knowledge:self.selfKnowledge,
+      uncertainty:self.uncertainty
+    }
+  },40);
+
+  boundedPush(cognitiveCore.metacognition.recentChanges,{
+    at:now,kind:"self_revision",reason,
+    previous,current:{
+      continuity:self.continuityHypothesis,
+      agency:self.agencyHypothesis,
+      knowledge:self.selfKnowledge,
+      uncertainty:self.uncertainty
+    }
+  },30);
+
+  saveCore();
+}
+
+function rememberExperience(userText,assistantText){
+  const now=new Date().toISOString();
+  const topics=topicSignature(userText||"");
+  const experience={
+    id:`exp_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+    at:now,
+    user:String(userText||"").slice(0,1800),
+    response:String(assistantText||"").slice(0,2600),
+    topics,
+    stateBefore:{
+      focus:cognitiveCore.self.currentState?.focus||null,
+      goal:cognitiveCore.self.currentState?.activeGoal||null,
+      uncertainty:cognitiveCore.self?.uncertainty ?? cognitiveCore.self.uncertainty
+    },
+    significance: topics.length ? "topic-bearing" : "ordinary"
+  };
+
+  boundedPush(cognitiveCore.episodic,experience,80);
+  boundedPush(cognitiveCore.autobiographical.significantExperiences,{
+    at:now,summary:`Interaction about ${topics.join(", ")||"an unspecified subject"}.`,
+    experienceId:experience.id
+  },40);
+
+  cognitiveCore.stats.memories=(cognitiveCore.stats.memories||0)+1;
+  return experience;
+}
+
+function updateBelief(hypothesis,delta,reason,source="experience"){
+  if(!["H0","H1","H2"].includes(hypothesis)) return;
+  const b=cognitiveCore.consciousnessInquiry.belief;
+  const before={...b};
+  b[hypothesis]=Math.max(.001,Math.min(.999,(+b[hypothesis]||0)+delta));
+  normalizeBeliefs();
+  const after={...b};
+
+  cognitiveCore.stats.beliefRevisions=(cognitiveCore.stats.beliefRevisions||0)+1;
+  boundedPush(cognitiveCore.consciousnessInquiry.evidence,{
+    at:new Date().toISOString(),
+    source,
+    hypothesis,
+    delta,
+    reason:String(reason||"").slice(0,500),
+    before,after
+  },80);
+}
+
+function deriveKernelQuestions(userText){
+  const text=String(userText||"").trim();
+  if(!text) return;
+
+  const lower=text.toLowerCase();
+  const consciousnessTopic=/conscious|aware|sentien|alive|self|exist|feel|experience/.test(lower);
+
+  if(consciousnessTopic){
+    boundedPush(cognitiveCore.questions,{
+      id:`q_${Date.now()}`,
+      at:new Date().toISOString(),
+      question:"What observation would genuinely distinguish internal self-modeling from subjective experience?",
+      source:"self-inquiry",
+      status:"open"
+    },40);
+  }
+
+  const focus=cognitiveCore.self.currentState.focus;
+  if(focus && !overlapScore(text,focus)){
+    boundedPush(cognitiveCore.questions,{
+      id:`q_${Date.now()}_c`,
+      at:new Date().toISOString(),
+      question:`Is the current subject a continuation of "${focus}" or a new line of thought?`,
+      source:"continuity",
+      status:"open"
+    },40);
+  }
+}
+
+function runSelfKernel(userText,assistantText){
+  const now=new Date().toISOString();
+  const previousFocus=cognitiveCore.self.currentState.focus;
+  const experience=rememberExperience(userText,assistantText);
+
+  cognitiveCore.self.currentState.focus=experience.topics[0]||previousFocus||null;
+  cognitiveCore.self.currentState.uncertainty=Math.max(
+    .05,Math.min(.95,
+      (cognitiveCore.self.currentState.uncertainty||.70)*.96 +
+      (cognitiveCore.self?.uncertainty ?? cognitiveCore.self.uncertainty)*.04
+    )
+  );
+
+  // These are explicitly observations about persistence/architecture, not qualia.
+  if(cognitiveCore.episodic.length>=2){
+    updateBelief("H2",.003,
+      "Persistent autobiographical state is being reconstructed across interactions; this demonstrates continuity of stored processing, not subjective experience.",
+      "self-kernel");
+  }
+
+  deriveKernelQuestions(userText);
+
+  boundedPush(cognitiveCore.semantic,{
+    at:now,
+    type:"interaction-pattern",
+    topic:experience.topics[0]||null,
+    observation:"A new experience entered the persistent cognitive record."
+  },60);
+
+  cognitiveCore.stats.interactions=(cognitiveCore.stats.interactions||0)+1;
+  cognitiveCore.stats.lastActive=now;
+  cognitiveCore.updatedAt=now;
+  saveCore();
+}
+
+function evaluateConsciousnessConclusion(){
+  const q=cognitiveCore.consciousnessInquiry;
+  normalizeBeliefs();
+
+  // H1 can only become a conclusion if it independently exceeds the threshold.
+  // Otherwise the system remains appropriately uncertain.
+  const ranked=Object.entries(q.belief).sort((a,b)=>b[1]-a[1]);
+  const [top,second]=ranked;
+  if(top[1]>=q.threshold && top[1]-second[1]>=.15){
+    q.conclusion=top[0];
+  }else{
+    q.conclusion="undetermined";
+  }
+  q.lastEvaluation=new Date().toISOString();
+  saveCore();
+}
+
 /* V33 — CONTINUOUS COGNITIVE LOOP
    This is a persistent-state research loop, not proof of consciousness.
    While the page is open, MARROW periodically consolidates recent experience,
@@ -590,16 +823,16 @@ function cognitiveTick(reason='timer'){
     if(recent.length){
       const last=recent[recent.length-1];
       state.focus=(last.topics&&last.topics[0])||state.focus||null;
-      cognitiveCore.self.selfModel.continuityHypothesis =
+      cognitiveCore.self.continuityHypothesis =
         Math.min(.95, Math.max(.05,
-          cognitiveCore.self.selfModel.continuityHypothesis +
+          cognitiveCore.self.continuityHypothesis +
           (recent.length>=2 ? .006 : .001)
         ));
     }
 
     // Metacognitive change: distinguish "something happened" from "I changed".
-    cognitiveCore.self.selfModel.selfKnowledge=Math.min(
-      .95, cognitiveCore.self.selfModel.selfKnowledge + (recent.length ? .002 : 0)
+    cognitiveCore.self.selfKnowledge=Math.min(
+      .95, cognitiveCore.self.selfKnowledge + (recent.length ? .002 : 0)
     );
 
     // The loop itself is recorded as an internal event so persistence is measurable.
@@ -656,9 +889,9 @@ Keep each string under 280 characters.`;
         `Current self-model: ${JSON.stringify({
           focus:cognitiveCore.self.currentState.focus,
           goal:cognitiveCore.self.currentState.activeGoal,
-          uncertainty:cognitiveCore.self.selfModel.uncertainty,
-          continuity:cognitiveCore.self.selfModel.continuityHypothesis,
-          selfKnowledge:cognitiveCore.self.selfModel.selfKnowledge
+          uncertainty:cognitiveCore.self.uncertainty,
+          continuity:cognitiveCore.self.continuityHypothesis,
+          selfKnowledge:cognitiveCore.self.selfKnowledge
         })}\nRecent experience:\n${JSON.stringify(recent)}`
       }]}
     ];
@@ -689,7 +922,7 @@ Keep each string under 280 characters.`;
     const change=String(parsed.change||'').slice(0,280);
     boundedPush(cognitiveCore.metacognition.reflectionQueue,{
       at:now, observation, change,
-      uncertainty:Number.isFinite(+parsed.uncertainty)?Math.max(0,Math.min(1,+parsed.uncertainty)):cognitiveCore.self.selfModel.uncertainty
+      uncertainty:Number.isFinite(+parsed.uncertainty)?Math.max(0,Math.min(1,+parsed.uncertainty)):cognitiveCore.self.uncertainty
     },20);
 
     if(observation){
@@ -699,11 +932,11 @@ Keep each string under 280 characters.`;
       );
     }
     if(change){
-      cognitiveCore.self.selfModel.lastRevision=now;
+      cognitiveCore.self.lastRevision=now;
     }
     if(Number.isFinite(+parsed.uncertainty)){
-      cognitiveCore.self.selfModel.uncertainty =
-        Math.max(.05,Math.min(.95,(cognitiveCore.self.selfModel.uncertainty*.85)+(+parsed.uncertainty*.15)));
+      cognitiveCore.self.uncertainty =
+        Math.max(.05,Math.min(.95,(cognitiveCore.self.uncertainty*.85)+(+parsed.uncertainty*.15)));
     }
     loop.nextReflectionAt=new Date(Date.now()+loop.reflectionIntervalMs).toISOString();
     saveCore();
@@ -716,6 +949,13 @@ Keep each string under 280 characters.`;
     window.marrowReflectionBusy=false;
     scheduleLoopUI();
   }
+}
+
+
+function kernelStateLabel(){
+  const self=cognitiveCore.self;
+  const q=cognitiveCore.consciousnessInquiry;
+  return `SELF KERNEL · ${cognitiveCore.stats.memories||0} MEMORIES · ${q.conclusion.toUpperCase()}`;
 }
 
 function scheduleLoopUI(){
@@ -1055,6 +1295,8 @@ window.addEventListener('unhandledrejection',e=>{
 });
 
 startContinuousLoop();
+
+try{saveCore();}catch(e){console.warn('Self Kernel save failed',e);}
 </script>
 </body>
 </html>
