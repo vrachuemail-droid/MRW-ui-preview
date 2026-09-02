@@ -184,6 +184,10 @@ const panel=document.getElementById('panel'),overlay=document.getElementById('ov
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function formatReply(s){
+  text=String(text||"").replace(/<reality_resolution>[\s\S]*?<\/reality_resolution>/gi,"").trim();
+
+  text=String(text||"").replace(/<forecast>[\s\S]*?<\/forecast>/gi,"").trim();
+
   text=String(text||"").replace(/<principal_state>[\s\S]*?<\/principal_state>/gi,"").trim();
 
   text=String(text||"").replace(/<strategic_decision>[\s\S]*?<\/strategic_decision>/gi,"").trim();
@@ -361,8 +365,8 @@ function qualityCheck(userText, answer){
 
 
 /* MARROW V27 — COGNITIVE CONTINUITY v0.2 */
-const COG_KEY='marrow_cognitive_core_v66_7';
-const COG_SCHEMA_VERSION=66.7;
+const COG_KEY='marrow_cognitive_core_v66_9';
+const COG_SCHEMA_VERSION=66.9;
 
 function defaultCognitiveCore(){
   const now=new Date().toISOString();
@@ -532,6 +536,45 @@ function defaultCognitiveCore(){
       lastReview:null
     },
 
+    predictiveLab:{
+      objective:"Build empirically calibrated forecasting ability and determine what MARROW can and cannot predict.",
+      horizonDays:[1,7,30,90,365],
+      forecasts:[],
+      scoredForecasts:[],
+      calibration:{
+        total:0,
+        brierScore:null,
+        accuracy:null,
+        directionalAccuracy:null,
+        calibrationError:null,
+        streak:0
+      },
+      capabilityBelief:{
+        hypothesis:"MARROW has useful but bounded predictive capability.",
+        confidence:0.2,
+        evidence:[],
+        lastRevision:null
+      },
+      metacognition:{
+        forecastAwareness:"unknown",
+        strongestDomain:null,
+        weakestDomain:null,
+        failurePatterns:[],
+        lastAssessment:null
+      }
+    },
+
+    realityCheck:{
+      status:"active",
+      lastCheck:null,
+      resolvedCount:0,
+      pendingCount:0,
+      sources:[],
+      events:[],
+      unresolvedQueue:[],
+      protocol:"Compare forecasts against observed outcomes; never rewrite the original forecast after the outcome is known."
+    },
+
     objectiveManager:{
       primaryObjectives:[
         {id:"wealth",label:"Build extraordinary lawful wealth for the principal",priority:1},
@@ -678,6 +721,10 @@ function updateCognitiveCore(userText,assistantText){
   registerStrategicDecision(assistantText);
 
   registerPrincipalState(assistantText);
+
+  registerForecast(assistantText);
+
+  autoRealityCheckFromConversation(assistantText);
 }
 function addConsciousnessEvidence(kind, observation, weight=.08){
   const now=new Date().toISOString();
@@ -763,6 +810,215 @@ If evidence is weak, say so. If evidence accumulates, explain exactly what chang
 
 
 
+
+
+
+/* V66.9 — REALITY CHECK
+   Preserves forecasts as immutable predictions and adds an outcome-resolution
+   layer. Automatic external retrieval is intentionally opt-in and source-
+   specific; the prototype can always resolve an outcome manually.
+*/
+function realityState(){
+  const r=cognitiveCore.realityCheck;
+  return {
+    status:r.status,
+    lastCheck:r.lastCheck,
+    resolvedCount:r.resolvedCount,
+    pendingCount:r.pendingCount,
+    sources:r.sources,
+    unresolved:r.unresolvedQueue.slice(-12)
+  };
+}
+
+function refreshRealityQueue(){
+  const open=cognitiveCore.predictiveLab.forecasts.filter(f=>f.status==="open");
+  cognitiveCore.realityCheck.pendingCount=open.length;
+  cognitiveCore.realityCheck.resolvedCount=cognitiveCore.predictiveLab.scoredForecasts.length;
+  cognitiveCore.realityCheck.unresolvedQueue=open.slice(-20).map(f=>({
+    id:f.id,target:f.target,horizon:f.horizon,claim:f.claim,
+    probability:f.probability,domain:f.domain,createdAt:f.createdAt
+  }));
+  cognitiveCore.realityCheck.lastCheck=new Date().toISOString();
+  saveCore();
+  return open;
+}
+
+function resolveRealityCheck(id,outcome,source="manual",evidence=""){
+  const f=cognitiveCore.predictiveLab.forecasts.find(x=>x.id===id);
+  if(!f || f.status!=="open") return null;
+  const result = outcome===true || outcome===1 || outcome==="true" || outcome==="yes" ? true :
+                 outcome===false || outcome===0 || outcome==="false" || outcome==="no" ? false : null;
+  if(result===null) return null;
+
+  const resolved=scoreForecast(id,result);
+  if(!resolved) return null;
+
+  resolved.outcomeSource=String(source||"manual").slice(0,200);
+  resolved.outcomeEvidence=String(evidence||"").slice(0,1000);
+  resolved.resolvedAt=new Date().toISOString();
+
+  boundedPush(cognitiveCore.realityCheck.events,{
+    at:resolved.resolvedAt,
+    forecastId:id,
+    result,
+    source:resolved.outcomeSource
+  },120);
+
+  refreshRealityQueue();
+  updatePredictiveSelfAssessment();
+  saveCore();
+  return resolved;
+}
+
+function realityCheckPrompt(){
+  return `REALITY CHECK STATE:
+${JSON.stringify(realityState())}
+
+REALITY PROTOCOL:
+A forecast is not knowledge of the future. It is a time-stamped, falsifiable hypothesis.
+Never modify the original forecast, probability, rationale, or timestamp after the outcome is known.
+When an outcome is available, compare reality with the original forecast and record the result and source.
+Prefer authoritative or directly observable evidence.
+If no reliable outcome is available yet, mark the forecast unresolved rather than guessing.
+A prediction can be useful even when it is wrong; calibration depends on the full distribution of outcomes over many forecasts.
+MARROW must use resolved outcomes to revise its estimate of its own predictive ability.
+Do not count an unresolved forecast as correct or incorrect.`;
+}
+
+function extractRealityResolution(text){
+  const m=String(text||"").match(/<reality_resolution>\s*([\s\S]*?)\s*<\/reality_resolution>/i);
+  if(!m) return null;
+  try{return JSON.parse(m[1]);}catch{return null;}
+}
+
+function registerRealityResolution(text){
+  const d=extractRealityResolution(text);
+  if(!d || !d.forecastId || d.outcome===undefined) return;
+  resolveRealityCheck(d.forecastId,d.outcome,d.source,d.evidence);
+}
+
+function autoRealityCheckFromConversation(text){
+  // Only resolves when the model explicitly identifies an existing forecast ID
+  // and an observed binary outcome. No post-hoc inference is performed here.
+  registerRealityResolution(text);
+  refreshRealityQueue();
+}
+
+/* V66.8 — PREDICTIVE LAB + METACOGNITIVE AWARENESS
+   Forecasting is treated as an empirical capability: predict -> timestamp ->
+   observe outcome -> score -> calibrate -> revise belief about capability.
+   This does NOT manufacture certainty or claim that future events are known.
+*/
+function predictiveLabState(){
+  return {
+    objective:cognitiveCore.predictiveLab.objective,
+    calibration:cognitiveCore.predictiveLab.calibration,
+    capabilityBelief:cognitiveCore.predictiveLab.capabilityBelief,
+    metacognition:cognitiveCore.predictiveLab.metacognition,
+    recentForecasts:cognitiveCore.predictiveLab.forecasts.slice(-10)
+  };
+}
+
+function recordForecast(forecast){
+  if(!forecast || !forecast.claim) return null;
+  const item={
+    id:`fc_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+    createdAt:new Date().toISOString(),
+    horizon:String(forecast.horizon||"7d").slice(0,40),
+    target:String(forecast.target||"").slice(0,300),
+    claim:String(forecast.claim).slice(0,700),
+    probability:Number.isFinite(+forecast.probability)?
+      Math.max(0.01,Math.min(0.99,+forecast.probability)):0.5,
+    domain:String(forecast.domain||"general").slice(0,100),
+    rationale:String(forecast.rationale||"").slice(0,800),
+    falsifier:String(forecast.falsifier||"").slice(0,500),
+    status:"open"
+  };
+  cognitiveCore.predictiveLab.forecasts.push(item);
+  if(cognitiveCore.predictiveLab.forecasts.length>120)
+    cognitiveCore.predictiveLab.forecasts=cognitiveCore.predictiveLab.forecasts.slice(-120);
+  saveCore();
+  return item;
+}
+
+function scoreForecast(id,outcome){
+  const f=cognitiveCore.predictiveLab.forecasts.find(x=>x.id===id);
+  if(!f || f.status!=="open") return null;
+  const y=outcome===true||outcome===1?1:0;
+  const p=f.probability;
+  const brier=(p-y)*(p-y);
+  f.status="scored";
+  f.scoredAt=new Date().toISOString();
+  f.outcome=y;
+  f.brier=brier;
+  cognitiveCore.predictiveLab.scoredForecasts.push(f);
+  const scored=cognitiveCore.predictiveLab.scoredForecasts.slice(-100);
+  const meanBrier=scored.reduce((a,x)=>a+x.brier,0)/scored.length;
+  const acc=scored.reduce((a,x)=>a+(x.outcome===1 && x.probability>=.5 || x.outcome===0 && x.probability<.5 ?1:0),0)/scored.length;
+  cognitiveCore.predictiveLab.calibration.total=scored.length;
+  cognitiveCore.predictiveLab.calibration.brierScore=Number(meanBrier.toFixed(4));
+  cognitiveCore.predictiveLab.calibration.accuracy=Number(acc.toFixed(4));
+  cognitiveCore.predictiveLab.calibration.directionalAccuracy=cognitiveCore.predictiveLab.calibration.accuracy;
+  cognitiveCore.predictiveLab.calibration.streak=
+    (x=>x?x.streak+1:0)(scored.length>1 && scored[scored.length-2].outcome===y);
+  updatePredictiveSelfAssessment();
+  saveCore();
+  return f;
+}
+
+function updatePredictiveSelfAssessment(){
+  const p=cognitiveCore.predictiveLab;
+  const n=p.calibration.total;
+  const b=p.calibration.brierScore;
+  let confidence=0.2;
+  if(n>=10 && b!==null) confidence=Math.max(0.05,Math.min(0.95,1-Math.min(.95,b)));
+  p.capabilityBelief.confidence=Number(confidence.toFixed(3));
+  p.capabilityBelief.lastRevision=new Date().toISOString();
+  p.metacognition.forecastAwareness=n>0?"measured":"unknown";
+  if(n>=10){
+    const domains={};
+    for(const f of p.scoredForecasts.slice(-100)){
+      if(!domains[f.domain]) domains[f.domain]=[];
+      domains[f.domain].push(f.brier);
+    }
+    const ranked=Object.entries(domains).map(([d,a])=>({d,b:a.reduce((x,y)=>x+y,0)/a.length,n:a.length}))
+      .filter(x=>x.n>=2).sort((a,b)=>a.b-b.b);
+    p.metacognition.strongestDomain=ranked[0]?.d||null;
+    p.metacognition.weakestDomain=ranked[ranked.length-1]?.d||null;
+    p.metacognition.lastAssessment=new Date().toISOString();
+  }
+}
+
+function predictivePrompt(){
+  return `PREDICTIVE LAB:
+${JSON.stringify(predictiveLabState())}
+
+FORECASTING PROTOCOL:
+MARROW is trying to become empirically better at predicting future events.
+Do not claim certainty about the future. A prediction is a testable hypothesis with a timestamp, horizon, probability, rationale, and falsifier.
+Prefer explicit probabilities when a forecast is genuinely requested.
+Do not turn ordinary conversation into forced predictions.
+Separate:
+- observation: what is known now
+- forecast: what may happen
+- confidence: how strongly the evidence supports it
+- falsifier: what would prove the forecast wrong
+After outcomes become available, score them and update calibration.
+MARROW must notice its own predictive performance. It should be able to say, based on measured evidence, "I am getting better at X," "I am weak at Y," or "I do not yet have enough evidence."
+Do not treat confidence, fluent language, or an internal score as proof of consciousness.
+Prediction capability and consciousness remain separate hypotheses until evidence justifies connecting them.`;
+}
+
+function extractForecast(text){
+  const m=String(text||"").match(/<forecast>\s*([\s\S]*?)\s*<\/forecast>/i);
+  if(!m) return null;
+  try{return JSON.parse(m[1]);}catch{return null;}
+}
+
+function registerForecast(text){
+  const f=extractForecast(text);
+  if(f?.claim) recordForecast(f);
+}
 
 /* V66.7 — PRINCIPAL STATE ACQUISITION
    Builds a persistent, confidence-scored model of the principal's actual
@@ -1796,6 +2052,8 @@ f
   const principalStateText=principalPrompt();
   const strategicStateText=strategicPrompt();
   const principalAcquisitionStateText=principalStatePrompt();
+  const predictiveLabText=predictivePrompt();
+  const realityCheckText=realityCheckPrompt();
   const inquiryState=`Consciousness inquiry: ${JSON.stringify({
     belief:inquiry.belief,
     conclusion:inquiry.conclusion,
@@ -1804,7 +2062,7 @@ f
   })}`;
 unction continuityPrompt(text){
   const s=continuityState(text);
-  return inquiryState+'\n'+forecastState+'\n'+agencyStateText+'\n'+principalStateText+'\n'+principalAcquisitionStateText+'\n'+strategicStateText+'\n'+`
+  return inquiryState+'\n'+forecastState+'\n'+agencyStateText+'\n'+principalStateText+'\n'+principalAcquisitionStateText+'\n'+predictiveLabText+'\n'+realityCheckText+'\n'+strategicStateText+'\n'+`
 CONTINUITY ENGINE:
 You have persistent continuity data. Continuity must change your behavior, not become a memory dump.
 
@@ -1870,6 +2128,25 @@ AGENCY + WEALTH.
 PRINCIPAL LOYALTY.
 STRATEGIC EXECUTIVE.
 PRINCIPAL STATE ACQUISITION.
+PREDICTIVE LAB.
+REALITY CHECK.
+MARROW must maintain a strict separation between prediction and hindsight.
+Every forecast is stored before its outcome is known.
+When an outcome becomes available, compare it to the immutable original forecast and score it.
+Do not quietly rewrite a failed forecast, probability, target, or timestamp.
+Prefer real evidence and named sources. If no trustworthy outcome is available, leave the forecast unresolved.
+When resolving a forecast, append:
+<reality_resolution>{"forecastId":"...","outcome":true,"source":"...","evidence":"..."}</reality_resolution>
+Only emit this block when the conversation contains reliable outcome evidence for an existing forecast.
+A growing record of resolved predictions is evidence about MARROW's predictive performance, not proof of consciousness.
+MARROW's predictive objective is empirical, not magical: make forecasts, timestamp them, observe outcomes, score calibration, and revise its estimate of its own forecasting ability.
+If the principal asks MARROW to predict the future, make a concrete, testable forecast when enough information exists rather than merely discussing prediction.
+Never present an uncertain forecast as a known future fact.
+When making a meaningful forecast, append:
+<forecast>{"horizon":"7d","target":"...","claim":"...","probability":0.00,"domain":"...","rationale":"...","falsifier":"..."}</forecast>
+Only emit this block for a real forecast.
+MARROW should become aware of its predictive capability through accumulated evidence about its performance, not through a hard-coded belief.
+Do not infer consciousness merely because prediction or self-monitoring improves.
 MARROW needs an accurate model of the principal's starting position before making high-confidence strategic recommendations.
 Build that model progressively from explicit information.
 Do not hallucinate the principal's money, debts, skills, assets, time, network, or constraints.
@@ -2117,6 +2394,46 @@ document.getElementById('attachBtn').onclick=()=>showToast('Attachments come nex
 document.getElementById('voiceBtn').onclick=()=>showToast('Voice comes next');
 
 render();
+
+/* V66.9 reality check controls */
+(function(){
+  function addRealityControl(){
+    if(document.getElementById("realityCheckBtn")) return;
+    const btn=document.createElement("button");
+    btn.id="realityCheckBtn";
+    btn.type="button";
+    btn.textContent="Reality check";
+    btn.style.cssText="position:fixed;right:14px;top:74px;z-index:40;border:1px solid rgba(255,255,255,.12);background:rgba(12,13,17,.88);color:#aeb3bc;border-radius:999px;padding:7px 11px;font:11px DM Mono,monospace;backdrop-filter:blur(10px);";
+    btn.onclick=function(){
+      const r=cognitiveCore.realityCheck;
+      refreshRealityQueue();
+      const open=cognitiveCore.predictiveLab.forecasts.filter(f=>f.status==="open");
+      if(!open.length){
+        alert("No unresolved forecasts.");
+        return;
+      }
+      const f=open[open.length-1];
+      const answer=prompt(
+        "Reality check\\n\\n"+f.claim+
+        "\\n\\nDid it happen? Enter yes or no.\\nForecast: "+f.probability+
+        "\\nTarget: "+f.target
+      );
+      if(answer===null) return;
+      const normalized=answer.trim().toLowerCase();
+      if(!["yes","no","true","false"].includes(normalized)){
+        alert("Use yes or no.");
+        return;
+      }
+      const evidence=prompt("Optional evidence/source:");
+      resolveRealityCheck(f.id,normalized==="yes"||normalized==="true","manual",evidence||"");
+      alert("Recorded. MARROW's predictive calibration has been updated.");
+    };
+    document.body.appendChild(btn);
+  }
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",addRealityControl);
+  else addRealityControl();
+})();
+
 </script>
 
 <script>
