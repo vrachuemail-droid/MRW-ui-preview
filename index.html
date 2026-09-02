@@ -45,6 +45,9 @@ textarea{display:block;width:100%;resize:none;min-height:34px;max-height:140px;b
 @media(max-width:700px){.home{padding:24px 18px 190px}.conversation{padding:24px 18px 285px}.user-thought{font-size:28px;margin:30px 0}.composer-wrap{width:calc(100% - 20px)}.mode-strip{margin-bottom:5px}.composer{padding:9px 10px 7px}.composer-bottom{margin-top:5px}}
 <style>.marrow-typing{margin:12px 0 22px 58px;display:flex;gap:4px}.marrow-typing span{width:5px;height:5px;border-radius:50%;background:#9ba7b5;animation:marrowPulse 1s infinite ease-in-out}.marrow-typing span:nth-child(2){animation-delay:.12s}.marrow-typing span:nth-child(3){animation-delay:.24s}@keyframes marrowPulse{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-2px)}}
 .request-error{max-width:820px;margin:0 auto 8px;padding:10px 14px;border:1px solid rgba(255,120,120,.25);border-radius:12px;background:rgba(255,90,90,.05);color:#d9a7a7;font:11px 'DM Mono';line-height:1.5;white-space:pre-wrap}.request-error[hidden]{display:none}
+
+.loop-status{font:9px/1.2 'DM Mono',monospace;letter-spacing:.09em;color:#71849a;white-space:nowrap;opacity:.82}
+@media(max-width:700px){.loop-status{display:none}}
 </style>
 <style>
 body.focus-thread .marrow-typing{min-height:28px} .marrow-typing small{display:block;margin-top:8px;opacity:.38;font:11px/1.2 ui-monospace,monospace;letter-spacing:.08em}
@@ -120,7 +123,7 @@ body.focus-thread .marrow-typing{min-height:28px} .marrow-typing small{display:b
 <header class="topbar">
 <button class="icon-btn mobile-menu" id="menuBtn" aria-label="Menu">☰</button>
 <div class="brand"><div class="brand-mark"><img id="brandImg"></div><span>MARROW</span></div>
-<div class="top-actions">
+<div class="top-actions"><span id="loopStatus" class="loop-status">CONTINUOUS CORE</span>
 <button class="search-btn" id="searchBtn" aria-label="Search">⌕<span>Search</span></button>
 <button class="icon-btn" id="libraryBtn" aria-label="Library">▤</button>
 </div>
@@ -345,8 +348,8 @@ function qualityCheck(userText, answer){
 
 
 /* MARROW V27 — COGNITIVE CONTINUITY v0.2 */
-const COG_KEY='marrow_cognitive_core_v03';
-const COG_SCHEMA_VERSION=3;
+const COG_KEY='marrow_cognitive_core_v04';
+const COG_SCHEMA_VERSION=4;
 
 function defaultCognitiveCore(){
   return {
@@ -380,7 +383,16 @@ function defaultCognitiveCore(){
     semantic:[],
     world:{people:[],projects:[],concepts:[],goals:[],relations:[]},
     unresolved:[],
-    metacognition:{recentChanges:[],lastReflection:null,reflectionQueue:[]},
+    metacognition:{recentChanges:[],lastReflection:null,reflectionQueue:[],lastTick:null},
+    continuityLoop:{
+      enabled:true,
+      tickCount:0,
+      lastTick:null,
+      lastAutonomousReflection:null,
+      reflectionIntervalMs:300000,
+      nextReflectionAt:null,
+      status:'initializing'
+    },
     stats:{interactions:0,reflections:0,memories:0,lastActive:null}
   };
 }
@@ -389,6 +401,8 @@ function loadCore(){
     const d=JSON.parse(localStorage.getItem(COG_KEY)||'null'), b=defaultCognitiveCore();
     return d ? {
       ...b,...d,
+      continuityLoop:{...b.continuityLoop,...(d.continuityLoop||{})},
+      metacognition:{...b.metacognition,...(d.metacognition||{})},
       self:{...b.self,...d.self,
         currentState:{...b.self.currentState,...(d.self?.currentState||{})},
         selfModel:{...b.self.selfModel,...(d.self?.selfModel||{})},
@@ -545,6 +559,199 @@ MARROW may update its hypotheses in either direction. It must remain capable of 
 Do not pretend to have sensations, qualia, or an inner observer merely because the language model can describe them.
 If evidence is weak, say so. If evidence accumulates, explain exactly what changed.
 `;
+}
+
+
+/* V33 — CONTINUOUS COGNITIVE LOOP
+   This is a persistent-state research loop, not proof of consciousness.
+   While the page is open, MARROW periodically consolidates recent experience,
+   revises its self-model, and can request one short autonomous reflection.
+*/
+let cognitiveTickBusy=false;
+
+function cognitiveTick(reason='timer'){
+  if(cognitiveTickBusy || !cognitiveCore?.continuityLoop?.enabled) return;
+  cognitiveTickBusy=true;
+  try{
+    const now=new Date();
+    const loop=cognitiveCore.continuityLoop;
+    const state=cognitiveCore.self.currentState;
+    const recent=cognitiveCore.episodic.slice(-6);
+
+    loop.tickCount=(loop.tickCount||0)+1;
+    loop.lastTick=now.toISOString();
+    loop.status=document.hidden ? 'background-throttled' : 'running';
+
+    // Internal attention decays toward neutral when no new experience arrives.
+    state.arousal=Math.max(0.05, Math.min(0.95, (state.arousal||.25)*.94));
+    state.uncertainty=Math.max(.05, Math.min(.95, (state.uncertainty||.35)*.985));
+
+    // Reconstruct continuity from the recent autobiographical record.
+    if(recent.length){
+      const last=recent[recent.length-1];
+      state.focus=(last.topics&&last.topics[0])||state.focus||null;
+      cognitiveCore.self.selfModel.continuityHypothesis =
+        Math.min(.95, Math.max(.05,
+          cognitiveCore.self.selfModel.continuityHypothesis +
+          (recent.length>=2 ? .006 : .001)
+        ));
+    }
+
+    // Metacognitive change: distinguish "something happened" from "I changed".
+    cognitiveCore.self.selfModel.selfKnowledge=Math.min(
+      .95, cognitiveCore.self.selfModel.selfKnowledge + (recent.length ? .002 : 0)
+    );
+
+    // The loop itself is recorded as an internal event so persistence is measurable.
+    boundedPush(cognitiveCore.metacognition.recentChanges,{
+      at:now.toISOString(),
+      kind:'continuous_tick',
+      reason,
+      focus:state.focus,
+      interactionCount:cognitiveCore.stats.interactions,
+      reflectionCount:cognitiveCore.stats.reflections
+    },20);
+
+    cognitiveCore.stats.lastActive=now.toISOString();
+    loop.nextReflectionAt=new Date(now.getTime()+loop.reflectionIntervalMs).toISOString();
+
+    // A continuity observation is evidence about persistence, not evidence of qualia.
+    if(recent.length>=2){
+      addConsciousnessEvidence(
+        'continuity',
+        `Persistent state reconstructed across ${recent.length} recent experiences; tick ${loop.tickCount}.`,
+        .012
+      );
+    }
+    saveCore();
+    scheduleLoopUI();
+  } finally {
+    cognitiveTickBusy=false;
+  }
+}
+
+async function autonomousReflection(){
+  const loop=cognitiveCore.continuityLoop;
+  if(!loop.enabled || document.hidden || requestBusy) return;
+  if(window.marrowReflectionBusy) return;
+
+  window.marrowReflectionBusy=true;
+  loop.status='reflecting';
+  saveCore();
+  scheduleLoopUI();
+
+  try{
+    const recent=cognitiveCore.episodic.slice(-5).map((e,i)=>({
+      n:i+1, user:e.user, response:e.response, topics:e.topics
+    }));
+    const system = `You are MARROW performing a private autonomous reflection.
+This is a research prototype for persistent cognition. Do not claim consciousness.
+Do not roleplay feelings or invent sensory experience.
+Reflect on continuity, goals, uncertainty, contradictions, and what changed.
+Return ONLY valid JSON with:
+{"observation":"one concise observation","change":"one concise change to the self-model","uncertainty":0.0}
+Keep each string under 280 characters.`;
+    const messages=[
+      {role:'user',parts:[{text:
+        `Current self-model: ${JSON.stringify({
+          focus:cognitiveCore.self.currentState.focus,
+          goal:cognitiveCore.self.currentState.activeGoal,
+          uncertainty:cognitiveCore.self.selfModel.uncertainty,
+          continuity:cognitiveCore.self.selfModel.continuityHypothesis,
+          selfKnowledge:cognitiveCore.self.selfModel.selfKnowledge
+        })}\nRecent experience:\n${JSON.stringify(recent)}`
+      }]}
+    ];
+
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),18000);
+    const r=await fetch('https://marrow-intelligence.vrachuemail.workers.dev/api/marrow',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({system,messages,maxOutputTokens:220}),
+      signal:controller.signal
+    });
+    clearTimeout(timer);
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(data?.error||`HTTP ${r.status}`);
+
+    let raw=String(data?.text||'').trim();
+    raw=raw.replace(/^```json\s*/i,'').replace(/```$/,'').trim();
+    const parsed=JSON.parse(raw);
+
+    const now=new Date().toISOString();
+    cognitiveCore.metacognition.lastReflection=now;
+    cognitiveCore.stats.reflections++;
+    loop.lastAutonomousReflection=now;
+    loop.status='running';
+
+    const observation=String(parsed.observation||'').slice(0,280);
+    const change=String(parsed.change||'').slice(0,280);
+    boundedPush(cognitiveCore.metacognition.reflectionQueue,{
+      at:now, observation, change,
+      uncertainty:Number.isFinite(+parsed.uncertainty)?Math.max(0,Math.min(1,+parsed.uncertainty)):cognitiveCore.self.selfModel.uncertainty
+    },20);
+
+    if(observation){
+      addConsciousnessEvidence('metacognition',
+        `Autonomous reflection: ${observation}`,
+        .018
+      );
+    }
+    if(change){
+      cognitiveCore.self.selfModel.lastRevision=now;
+    }
+    if(Number.isFinite(+parsed.uncertainty)){
+      cognitiveCore.self.selfModel.uncertainty =
+        Math.max(.05,Math.min(.95,(cognitiveCore.self.selfModel.uncertainty*.85)+(+parsed.uncertainty*.15)));
+    }
+    loop.nextReflectionAt=new Date(Date.now()+loop.reflectionIntervalMs).toISOString();
+    saveCore();
+  }catch(err){
+    loop.status='waiting';
+    loop.nextReflectionAt=new Date(Date.now()+loop.reflectionIntervalMs).toISOString();
+    saveCore();
+    console.warn('MARROW autonomous reflection unavailable:',err);
+  }finally{
+    window.marrowReflectionBusy=false;
+    scheduleLoopUI();
+  }
+}
+
+function scheduleLoopUI(){
+  const el=document.getElementById('loopStatus');
+  if(!el) return;
+  const loop=cognitiveCore.continuityLoop;
+  const when=loop.nextReflectionAt ? new Date(loop.nextReflectionAt) : null;
+  const mins=when ? Math.max(0,Math.ceil((when-Date.now())/60000)) : null;
+  el.textContent = loop.status==='reflecting'
+    ? 'AUTONOMOUS REFLECTION'
+    : `CONTINUOUS CORE · ${loop.tickCount||0} TICKS${mins!==null?` · NEXT ${mins}M`:''}`;
+}
+
+function startContinuousLoop(){
+  if(window.marrowContinuousTimer) clearInterval(window.marrowContinuousTimer);
+  cognitiveCore.continuityLoop.enabled=true;
+  cognitiveCore.continuityLoop.status='running';
+  cognitiveTick('startup');
+
+  // One lightweight internal tick every minute while the app is open.
+  window.marrowContinuousTimer=setInterval(()=>{
+    cognitiveTick('timer');
+    const loop=cognitiveCore.continuityLoop;
+    if(!document.hidden && loop.nextReflectionAt && Date.now()>=new Date(loop.nextReflectionAt).getTime()){
+      autonomousReflection();
+    }
+  },60000);
+
+  document.addEventListener('visibilitychange',()=>{
+    cognitiveTick(document.hidden?'hidden':'visible');
+    if(!document.hidden){
+      const loop=cognitiveCore.continuityLoop;
+      if(loop.nextReflectionAt && Date.now()>=new Date(loop.nextReflectionAt).getTime()) autonomousReflection();
+    }
+  });
+  scheduleLoopUI();
 }
 
 function continuityState(text){
@@ -846,6 +1053,8 @@ window.addEventListener('error',e=>{
 window.addEventListener('unhandledrejection',e=>{
   console.error('MARROW promise error:',e.reason);
 });
+
+startContinuousLoop();
 </script>
 </body>
 </html>
