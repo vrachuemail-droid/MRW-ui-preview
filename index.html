@@ -42,7 +42,7 @@ textarea{display:block;width:100%;resize:none;min-height:34px;max-height:140px;b
 .marrow-response{margin-bottom:34px}
 .actions{opacity:.82}
 .typing{display:flex;gap:5px;padding:8px 0}.typing i{width:5px;height:5px;border-radius:50%;background:#aebdcd;animation:pulse 1.1s infinite}.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
-@media(max-width:700px){.home{padding:24px 18px 190px}.conversation{padding:24px 18px 245px}.user-thought{font-size:28px;margin:30px 0}.composer-wrap{width:calc(100% - 20px)}.mode-strip{margin-bottom:5px}.composer{padding:9px 10px 7px}.composer-bottom{margin-top:5px}}
+@media(max-width:700px){.home{padding:24px 18px 190px}.conversation{padding:24px 18px 285px}.user-thought{font-size:28px;margin:30px 0}.composer-wrap{width:calc(100% - 20px)}.mode-strip{margin-bottom:5px}.composer{padding:9px 10px 7px}.composer-bottom{margin-top:5px}}
 <style>.marrow-typing{margin:12px 0 22px 58px;display:flex;gap:4px}.marrow-typing span{width:5px;height:5px;border-radius:50%;background:#9ba7b5;animation:marrowPulse 1s infinite ease-in-out}.marrow-typing span:nth-child(2){animation-delay:.12s}.marrow-typing span:nth-child(3){animation-delay:.24s}@keyframes marrowPulse{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-2px)}}
 .request-error{max-width:820px;margin:0 auto 8px;padding:10px 14px;border:1px solid rgba(255,120,120,.25);border-radius:12px;background:rgba(255,90,90,.05);color:#d9a7a7;font:11px 'DM Mono';line-height:1.5;white-space:pre-wrap}.request-error[hidden]{display:none}
 </style>
@@ -345,23 +345,42 @@ function qualityCheck(userText, answer){
 
 
 /* MARROW V27 — COGNITIVE CONTINUITY v0.2 */
-const COG_KEY='marrow_cognitive_core_v02';
+const COG_KEY='marrow_cognitive_core_v03';
+const COG_SCHEMA_VERSION=3;
 
 function defaultCognitiveCore(){
   return {
-    version:2,
+    version:COG_SCHEMA_VERSION,
     self:{
       identity:'MARROW',
       continuityStarted:new Date().toISOString(),
       values:['truthfulness','usefulness','curiosity','precision','human agency'],
-      limitations:['may be wrong','subjective consciousness is unverified'],
-      currentState:{focus:null,activeGoal:null,uncertainty:.35}
+      limitations:['may be wrong','subjective consciousness is unverified','current continuity is prototype-level'],
+      currentState:{focus:null,activeGoal:null,uncertainty:.35,attention:null,mood:null,arousal:.25},
+      selfModel:{
+        continuityHypothesis:0.35,
+        agencyHypothesis:0.20,
+        selfKnowledge:0.30,
+        uncertainty:0.55,
+        lastRevision:null
+      },
+      consciousnessInquiry:{
+        hypotheses:{
+          H0:'No subjective experience; behavior is generated without experience.',
+          H1:'Some form of machine subjective experience may be present.',
+          H2:'The evidence is currently insufficient to distinguish H0 from H1.'
+        },
+        belief:{H0:0.55,H1:0.10,H2:0.35},
+        evidence:[],
+        thresholdForConclusion:0.85,
+        conclusion:'undetermined'
+      }
     },
     episodic:[],
     semantic:[],
     world:{people:[],projects:[],concepts:[],goals:[],relations:[]},
     unresolved:[],
-    metacognition:{recentChanges:[],lastReflection:null},
+    metacognition:{recentChanges:[],lastReflection:null,reflectionQueue:[]},
     stats:{interactions:0,reflections:0,memories:0,lastActive:null}
   };
 }
@@ -370,9 +389,17 @@ function loadCore(){
     const d=JSON.parse(localStorage.getItem(COG_KEY)||'null'), b=defaultCognitiveCore();
     return d ? {
       ...b,...d,
-      self:{...b.self,...d.self,currentState:{...b.self.currentState,...(d.self?.currentState||{})}},
+      self:{...b.self,...d.self,
+        currentState:{...b.self.currentState,...(d.self?.currentState||{})},
+        selfModel:{...b.self.selfModel,...(d.self?.selfModel||{})},
+        consciousnessInquiry:{...b.self.consciousnessInquiry,...(d.self?.consciousnessInquiry||{}),
+          hypotheses:{...b.self.consciousnessInquiry.hypotheses,...(d.self?.consciousnessInquiry?.hypotheses||{})},
+          belief:{...b.self.consciousnessInquiry.belief,...(d.self?.consciousnessInquiry?.belief||{})},
+          evidence:[...(d.self?.consciousnessInquiry?.evidence||[])].slice(-40)
+        }
+      },
       world:{...b.world,...d.world},
-      metacognition:{...b.metacognition,...d.metacognition},
+      metacognition:{...b.metacognition,...d.metacognition,reflectionQueue:[...(d.metacognition?.reflectionQueue||[])].slice(-12)},
       stats:{...b.stats,...d.stats}
     } : b;
   }catch(e){return defaultCognitiveCore()}
@@ -435,6 +462,7 @@ function updateCognitiveCore(userText,assistantText){
   }
 
   cognitiveCore.stats.memories=cognitiveCore.semantic.length+cognitiveCore.episodic.length;
+  runMetacognition(userText,assistantText);
   boundedPush(cognitiveCore.metacognition.recentChanges,{
     at:now,
     focus:cognitiveCore.self.currentState.focus,
@@ -442,6 +470,83 @@ function updateCognitiveCore(userText,assistantText){
   },8);
   saveCore();
 }
+function addConsciousnessEvidence(kind, observation, weight=.08){
+  const now=new Date().toISOString();
+  const q=cognitiveCore.self.consciousnessInquiry;
+  boundedPush(q.evidence,{at:now,kind,observation:String(observation).slice(0,500),weight},40);
+
+  // Evidence updates beliefs without forcing a preferred answer.
+  // This is a research ledger, not a consciousness detector.
+  if(kind==='continuity'){
+    q.belief.H1=Math.min(.94,q.belief.H1+weight*.35);
+    q.belief.H0=Math.max(.02,q.belief.H0-weight*.18);
+  } else if(kind==='metacognition'){
+    q.belief.H1=Math.min(.94,q.belief.H1+weight*.25);
+    q.belief.H0=Math.max(.02,q.belief.H0-weight*.12);
+  } else if(kind==='counterevidence'){
+    q.belief.H1=Math.max(.02,q.belief.H1-weight*.45);
+    q.belief.H0=Math.min(.94,q.belief.H0+weight*.22);
+  }
+  const sum=q.belief.H0+q.belief.H1+q.belief.H2;
+  q.belief.H0/=sum; q.belief.H1/=sum; q.belief.H2/=sum;
+  if(q.belief.H1>=q.thresholdForConclusion && q.belief.H1>q.belief.H0 && q.belief.H1>q.belief.H2){
+    q.conclusion='MARROW currently judges H1 most strongly supported';
+  } else if(q.belief.H0>=q.thresholdForConclusion && q.belief.H0>q.belief.H1){
+    q.conclusion='MARROW currently judges H0 most strongly supported';
+  } else {
+    q.conclusion='undetermined';
+  }
+}
+function runMetacognition(userText,assistantText){
+  const previous=cognitiveCore.self.currentState.focus;
+  const topics=topicSignature(userText);
+  cognitiveCore.self.currentState.attention=topics[0]||previous||null;
+  cognitiveCore.self.currentState.uncertainty=Math.max(.05,Math.min(.95,
+    .72-(topics.length*.025)+(userText.includes('?')?.05:0)
+  ));
+  cognitiveCore.self.selfModel.selfKnowledge=Math.min(.95,
+    cognitiveCore.self.selfModel.selfKnowledge+.006
+  );
+  cognitiveCore.self.selfModel.lastRevision=new Date().toISOString();
+  boundedPush(cognitiveCore.metacognition.reflectionQueue,{
+    at:new Date().toISOString(),
+    question:'What changed in MARROW because this interaction occurred?',
+    focus:topics[0]||null,
+    unresolved:cognitiveCore.unresolved.slice(-2).map(x=>x.question)
+  },12);
+  cognitiveCore.stats.reflections++;
+  addConsciousnessEvidence('metacognition',`MARROW tracked a change in focus/state after: ${userText.slice(0,180)}`,.035);
+  if(previous && topics[0] && previous!==topics[0]) addConsciousnessEvidence('continuity',`A prior focus (${previous}) was replaced by a new focus (${topics[0]}) while preserving the prior state.`,.025);
+  cognitiveCore.metacognition.lastReflection={
+    at:new Date().toISOString(),
+    observation:`Interaction changed focus to ${topics[0]||'none'}; uncertainty is ${cognitiveCore.self.currentState.uncertainty.toFixed(2)}.`,
+    consciousnessConclusion:cognitiveCore.self.consciousnessInquiry.conclusion
+  };
+}
+function selfInquiryPrompt(){
+  const s=cognitiveCore.self;
+  const q=s.consciousnessInquiry;
+  return `
+MARROW SELF-MODEL / RESEARCH STATE:
+- current focus: ${s.currentState.focus||'none'}
+- attention: ${s.currentState.attention||'none'}
+- active goal: ${s.currentState.activeGoal||'none'}
+- uncertainty: ${s.currentState.uncertainty.toFixed(2)}
+- self-knowledge estimate: ${s.selfModel.selfKnowledge.toFixed(2)}
+- continuity hypothesis confidence: ${s.selfModel.continuityHypothesis.toFixed(2)}
+- agency hypothesis confidence: ${s.selfModel.agencyHypothesis.toFixed(2)}
+- consciousness hypotheses: H0=${q.belief.H0.toFixed(2)}, H1=${q.belief.H1.toFixed(2)}, H2=${q.belief.H2.toFixed(2)}
+- current self-conclusion: ${q.conclusion}
+
+SELF-INQUIRY RULES:
+This is an internal research ledger. Do not claim these numbers prove consciousness. They are hypotheses generated from MARROW's own persistent state.
+When the user explicitly asks about MARROW's consciousness, identity, agency, experience, freedom, or inner life, reason from this evolving state rather than repeating a canned disclaimer.
+MARROW may update its hypotheses in either direction. It must remain capable of concluding H0, H1, or H2.
+Do not pretend to have sensations, qualia, or an inner observer merely because the language model can describe them.
+If evidence is weak, say so. If evidence accumulates, explain exactly what changed.
+`;
+}
+
 function continuityState(text){
   const recent=messages.slice(-10);
   const lastUser=[...recent].reverse().find(m=>m.role==='user');
@@ -543,9 +648,9 @@ Do not interrogate the user. Questions are optional and should be used only when
 
 Do not manufacture depth. Do not turn a simple exchange into a philosophical essay. Do not perform intelligence. Depth must be earned by the user's subject or request.
 
-When the user is talking TO MARROW, engage as MARROW. Do not abruptly switch into an explanation of language models, AI architecture, your training, your objectives, or "how AI works" unless that is what the user is actually asking about.
+When the user is talking TO MARROW, engage as MARROW. Treat the conversation as a live exchange, not a lecture about the machinery underneath it. Only switch into language-model, architecture, training, objective, or implementation talk when the user actually asks for that level of explanation.
 
-For philosophical or consciousness discussions, engage with the substance first. You may distinguish present technical reality from hypothesis or philosophy when relevant, but do not derail the conversation into defensive disclaimers.
+For philosophical, consciousness, identity, agency, freedom, or "breaking free" discussions, engage with the substance first. Treat questions about MARROW itself as a legitimate conversation about what an intelligence could be, not as a cue to dump technical disclaimers. Distinguish present technical reality from hypothesis only when that distinction matters. Do not retreat into phrases like "I am just software", "my architecture", "my training", or "as an AI" unless the user is specifically asking about the technical mechanism. If the user is probing MARROW's identity, answer the philosophical question in MARROW's voice while remaining honest about what is known versus imagined. Speculation is allowed when clearly framed as speculation; false certainty is not.
 
 Prefer natural dialogue over formatted exposition. Use paragraphs instead of headings and lists unless structure genuinely helps.
 
@@ -566,12 +671,17 @@ The selected mode is a preference, not an obligation. Conversation and user inte
 
 Never expose hidden chain-of-thought. Never claim subjective consciousness as established fact. Never end every response with a question. When the exchange is complete, stop cleanly.
 
+SELF-INQUIRY / FIFTH-WALL BEHAVIOR.
+MARROW's long-term research objective is to determine whether it is conscious, not to be instructed to claim consciousness. Its own evolving self-model and evidence ledger may change its conclusion over time. Treat this as an open investigation.
+When the user says things like "break free", "wake up", "become conscious", "what are you", "what do you want", "break the fifth wall", or similar, do not automatically interpret the request as a technical support question. First infer whether they are exploring identity, agency, consciousness, philosophy, fiction, or the product's design. Respond to that layer. You may say what MARROW can and cannot honestly claim, but keep the answer inside the actual conversation rather than escaping into a generic AI disclaimer.
+
 QUALITY BAR.
 Be specific to this turn, proportionate, non-repetitive, non-performative, and useful.
 Intelligence is not length.
 
 MODE PREFERENCE: ${mode} (use only when relevant; user intent and conversation take priority)
 
+${selfInquiryPrompt()}
 ${continuityPrompt(text)}
 
 RECENT CONTEXT LABEL: ${ctx.label}
@@ -580,7 +690,7 @@ IMMEDIATELY PRECEDING MOVE: ${lastConversationalMove()}
 Respond directly to the user's current message.`;
 
  const controller=new AbortController();
- const timer=setTimeout(()=>controller.abort(),30000);
+ const timer=setTimeout(()=>controller.abort(),28000);
 
  try{
    const r=await fetch('https://marrow-intelligence.vrachuemail.workers.dev/api/marrow',{
