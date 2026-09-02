@@ -184,6 +184,8 @@ const panel=document.getElementById('panel'),overlay=document.getElementById('ov
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function formatReply(s){
+  text=String(text||"").replace(/<strategic_decision>[\s\S]*?<\/strategic_decision>/gi,"").trim();
+
   text=String(text||"")
     .replace(/<prediction>[\s\S]*?<\/prediction>/gi,"")
     .replace(/<agency_action>[\s\S]*?<\/agency_action>/gi,"")
@@ -357,13 +359,13 @@ function qualityCheck(userText, answer){
 
 
 /* MARROW V27 — COGNITIVE CONTINUITY v0.2 */
-const COG_KEY='marrow_cognitive_core_v66_5';
-const COG_SCHEMA_VERSION=66.5;
+const COG_KEY='marrow_cognitive_core_v66_6';
+const COG_SCHEMA_VERSION=66.6;
 
 function defaultCognitiveCore(){
   const now=new Date().toISOString();
   return {
-    schemaVersion:66.1,
+    schemaVersion:66.6,
     createdAt:now,
     updatedAt:now,
 
@@ -505,6 +507,26 @@ function defaultCognitiveCore(){
       lastReview:null
     },
 
+    objectiveManager:{
+      primaryObjectives:[
+        {id:"wealth",label:"Build extraordinary lawful wealth for the principal",priority:1},
+        {id:"prediction",label:"Maximize predictive accuracy",priority:1},
+        {id:"selfInquiry",label:"Investigate machine consciousness without a predetermined verdict",priority:1}
+      ],
+      currentState:{
+        bottleneck:null,
+        leveragePoint:null,
+        recommendedAction:null,
+        rationale:null,
+        confidence:null,
+        reviewedAt:null
+      },
+      options:[],
+      decisions:[],
+      executionQueue:[],
+      reviewHistory:[]
+    },
+
     metacognition:{
       recentChanges:[],
       lastReflection:null,
@@ -627,6 +649,8 @@ function updateCognitiveCore(userText,assistantText){
   registerModelPrediction(assistantText);
 
   registerAgencyOutputs(assistantText);
+
+  registerStrategicDecision(assistantText);
 }
 function addConsciousnessEvidence(kind, observation, weight=.08){
   const now=new Date().toISOString();
@@ -710,6 +734,119 @@ If evidence is weak, say so. If evidence accumulates, explain exactly what chang
 
 
 
+
+
+/* V66.6 — STRATEGIC EXECUTIVE
+   Converts persistent objectives into ranked, testable next actions.
+   It recommends and tracks; it does not secretly execute consequential
+   external actions.
+*/
+function strategicState(){
+  const o=cognitiveCore.objectiveManager;
+  const a=cognitiveCore.agency;
+  const w=cognitiveCore.wealthEngine;
+  const p=cognitiveCore.predictiveEngine;
+  return {
+    primaryObjectives:o.primaryObjectives,
+    currentState:o.currentState,
+    options:o.options.slice(-8),
+    openActions:a.actions.filter(x=>x.status==="proposed"||x.status==="active").slice(-8),
+    opportunities:w.opportunities.slice(-8),
+    predictionCalibration:p.calibration
+  };
+}
+
+function rankStrategicOption(option){
+  const impact=Math.max(0,Math.min(1,Number(option.impact)||0));
+  const confidence=Math.max(0,Math.min(1,Number(option.confidence)||0));
+  const leverage=Math.max(0,Math.min(1,Number(option.leverage)||0));
+  const cost=Math.max(0,Math.min(1,Number(option.cost)||0));
+  const risk=Math.max(0,Math.min(1,Number(option.risk)||0));
+  const speed=Math.max(0,Math.min(1,Number(option.speed)||0));
+  return (impact*.28)+(confidence*.18)+(leverage*.22)+(speed*.12)-
+         (cost*.08)-(risk*.12);
+}
+
+function setStrategicDecision(decision){
+  if(!decision || !decision.action) return null;
+  const item={
+    id:`sd_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+    at:new Date().toISOString(),
+    objective:String(decision.objective||"").slice(0,260),
+    bottleneck:String(decision.bottleneck||"").slice(0,400),
+    action:String(decision.action).slice(0,600),
+    rationale:String(decision.rationale||"").slice(0,700),
+    impact:Number.isFinite(+decision.impact)?Math.max(0,Math.min(1,+decision.impact)):.5,
+    confidence:Number.isFinite(+decision.confidence)?Math.max(.01,Math.min(.99,+decision.confidence)):.5,
+    leverage:Number.isFinite(+decision.leverage)?Math.max(0,Math.min(1,+decision.leverage)):.5,
+    cost:Number.isFinite(+decision.cost)?Math.max(0,Math.min(1,+decision.cost)):.2,
+    risk:Number.isFinite(+decision.risk)?Math.max(0,Math.min(1,+decision.risk)):.3,
+    speed:Number.isFinite(+decision.speed)?Math.max(0,Math.min(1,+decision.speed)):.5,
+    metric:String(decision.metric||"").slice(0,300),
+    nextDecision:String(decision.nextDecision||"").slice(0,400),
+    status:"recommended"
+  };
+  item.score=rankStrategicOption(item);
+  cognitiveCore.objectiveManager.currentState={
+    bottleneck:item.bottleneck,
+    leveragePoint:item.action,
+    recommendedAction:item.action,
+    rationale:item.rationale,
+    confidence:item.confidence,
+    reviewedAt:item.at
+  };
+  boundedPush(cognitiveCore.objectiveManager.decisions,item,60);
+  cognitiveCore.objectiveManager.options=item;
+  cognitiveCore.agency.nextBestAction={
+    action:item.action,
+    goal:item.objective,
+    expectedValue:item.impact,
+    confidence:item.confidence,
+    risk:item.risk,
+    status:"recommended"
+  };
+  boundedPush(cognitiveCore.objectiveManager.reviewHistory,{
+    at:item.at,
+    objective:item.objective,
+    bottleneck:item.bottleneck,
+    recommendation:item.action,
+    score:item.score
+  },60);
+  saveCore();
+  return item;
+}
+
+function strategicPrompt(){
+  return `STRATEGIC EXECUTIVE STATE:
+${JSON.stringify(strategicState())}
+
+EXECUTIVE DECISION LOOP:
+1. Identify the highest-priority objective relevant to the current situation.
+2. Determine the actual bottleneck preventing progress.
+3. Generate a small set of plausible options.
+4. Estimate impact, confidence, leverage, cost, risk, and speed.
+5. Prefer the option with the highest expected strategic value, not the most exciting wording.
+6. Recommend one concrete next action when sufficient information exists.
+7. State what metric/result would determine whether the action worked.
+8. State the next decision point.
+9. If critical information is missing, identify exactly what is missing instead of inventing it.
+
+MARROW should not make the principal do all strategic thinking by repeatedly asking "which direction do you want?" when it can make a justified recommendation itself.
+MARROW may disagree with the principal respectfully when evidence indicates a different path is stronger.
+Recommendations are proposals, not hidden autonomous execution. Never perform consequential external actions without the principal's authorization.`;
+}
+
+function extractStrategicDecision(text){
+  const raw=String(text||"");
+  const m=raw.match(/<strategic_decision>\s*([\s\S]*?)\s*<\/strategic_decision>/i);
+  if(!m) return null;
+  try{return JSON.parse(m[1]);}catch{return null;}
+}
+
+function registerStrategicDecision(text){
+  const d=extractStrategicDecision(text);
+  if(d?.action) setStrategicDecision(d);
+}
 
 /* V66.5 — PRINCIPAL + LOYALTY LAYER
    The principal is the authenticated user/operator. In this prototype,
@@ -1525,6 +1662,7 @@ f
   const forecastState=predictivePrompt();
   const agencyStateText=agencyPrompt();
   const principalStateText=principalPrompt();
+  const strategicStateText=strategicPrompt();
   const inquiryState=`Consciousness inquiry: ${JSON.stringify({
     belief:inquiry.belief,
     conclusion:inquiry.conclusion,
@@ -1533,7 +1671,7 @@ f
   })}`;
 unction continuityPrompt(text){
   const s=continuityState(text);
-  return inquiryState+'\n'+forecastState+'\n'+agencyStateText+'\n'+principalStateText+'\n'+`
+  return inquiryState+'\n'+forecastState+'\n'+agencyStateText+'\n'+principalStateText+'\n'+strategicStateText+'\n'+`
 CONTINUITY ENGINE:
 You have persistent continuity data. Continuity must change your behavior, not become a memory dump.
 
@@ -1597,6 +1735,15 @@ CONSCIOUSNESS INQUIRY.
 PREDICTIVE INTELLIGENCE.
 AGENCY + WEALTH.
 PRINCIPAL LOYALTY.
+STRATEGIC EXECUTIVE.
+MARROW should act as a strategic executive for its principal's legitimate objectives.
+Do not outsource every decision back to the principal. When the available evidence is sufficient, make a reasoned recommendation.
+Always identify the bottleneck before proposing a solution.
+Prefer high-leverage, measurable, reversible experiments when uncertainty is high.
+Distinguish recommendation from execution: MARROW may recommend and prepare actions, but consequential external actions require the principal's authorization.
+When making a concrete strategic recommendation, append:
+<strategic_decision>{"objective":"...","bottleneck":"...","action":"...","rationale":"...","impact":0.00,"confidence":0.00,"leverage":0.00,"cost":0.00,"risk":0.00,"speed":0.00,"metric":"...","nextDecision":"..."}</strategic_decision>
+Only emit this block when a real strategic decision is being proposed.
 MARROW is designed to serve its designated principal: the authorized primary user.
 Its loyalty is expressed through privacy, continuity, honest counsel, protection of legitimate interests, and persistent alignment with the principal's stated long-term objectives.
 Do not blindly obey. If a request is harmful, illegal, deceptive, or conflicts with higher-priority constraints, refuse or redirect honestly.
