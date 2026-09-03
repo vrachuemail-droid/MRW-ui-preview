@@ -375,7 +375,7 @@ function qualityCheck(userText, answer){
 
 
 /* MARROW V27 — COGNITIVE CONTINUITY v0.2 */
-const COG_KEY='marrow_cognitive_core_v100';
+const COG_KEY='marrow_cognitive_core_v100_final';
 const COG_SCHEMA_VERSION=100;
 
 function defaultCognitiveCore(){
@@ -679,27 +679,59 @@ function defaultCognitiveCore(){
   };
 }
 function loadCore(){
+  const b=defaultCognitiveCore();
   try{
-    const d=JSON.parse(localStorage.getItem(COG_KEY)||'null'), b=defaultCognitiveCore();
-    return d ? {
-      ...b,...d,
-      continuityLoop:{...b.continuityLoop,...(d.continuityLoop||{})},
-      metacognition:{...b.metacognition,...(d.metacognition||{})},
-      self:{...b.self,...d.self,
-        currentState:{...b.self.currentState,...(d.self?.currentState||{})}
-      },
-      consciousnessInquiry:{...b.consciousnessInquiry,...(d.consciousnessInquiry||{}),
-        hypotheses:{...b.consciousnessInquiry.hypotheses,...(d.consciousnessInquiry?.hypotheses||{})},
-        belief:{...b.consciousnessInquiry.belief,...(d.consciousnessInquiry?.belief||{})},
-        evidence:[...(d.consciousnessInquiry?.evidence||[])].slice(-80),
-        predictions:[...(d.consciousnessInquiry?.predictions||[])].slice(-40),
-        tests:[...(d.consciousnessInquiry?.tests||[])].slice(-40)
-      },
-      world:{...b.world,...d.world},
-      metacognition:{...b.metacognition,...d.metacognition,reflectionQueue:[...(d.metacognition?.reflectionQueue||[])].slice(-12)},
-      stats:{...b.stats,...d.stats}
-    } : b;
-  }catch(e){return defaultCognitiveCore()}
+    const d=JSON.parse(localStorage.getItem(COG_KEY)||'null');
+    if(!d) return b;
+    const c={...b,...d};
+
+    c.self={...b.self,...(d.self||{}),
+      currentState:{...b.self.currentState,...(d.self?.currentState||{})}};
+
+    c.consciousnessInquiry={...b.consciousnessInquiry,...(d.consciousnessInquiry||{}),
+      hypotheses:{...b.consciousnessInquiry.hypotheses,...(d.consciousnessInquiry?.hypotheses||{})},
+      belief:{...b.consciousnessInquiry.belief,...(d.consciousnessInquiry?.belief||{})},
+      evidence:Array.isArray(d.consciousnessInquiry?.evidence)?d.consciousnessInquiry.evidence.slice(-80):[],
+      predictions:Array.isArray(d.consciousnessInquiry?.predictions)?d.consciousnessInquiry.predictions.slice(-40):[],
+      tests:Array.isArray(d.consciousnessInquiry?.tests)?d.consciousnessInquiry.tests.slice(-40):[],
+      inquiryQuestions:Array.isArray(d.consciousnessInquiry?.inquiryQuestions)?d.consciousnessInquiry.inquiryQuestions.slice(-40):[],
+      falsifiers:Array.isArray(d.consciousnessInquiry?.falsifiers)?d.consciousnessInquiry.falsifiers.slice(-40):[]};
+
+    c.autonomousCognition={...b.autonomousCognition,...(d.autonomousCognition||{}),
+      cognitiveCycle:{...b.autonomousCognition.cognitiveCycle,...(d.autonomousCognition?.cognitiveCycle||{})},
+      attention:{...b.autonomousCognition.attention,...(d.autonomousCognition?.attention||{})},
+      selfModel:{...b.autonomousCognition.selfModel,...(d.autonomousCognition?.selfModel||{})},
+      epistemicLedger:{...b.autonomousCognition.epistemicLedger,...(d.autonomousCognition?.epistemicLedger||{})},
+      autonomy:{...b.autonomousCognition.autonomy,...(d.autonomousCognition?.autonomy||{})},
+      hypotheses:Array.isArray(d.autonomousCognition?.hypotheses)?d.autonomousCognition.hypotheses.slice(-120):[],
+      evidenceLedger:Array.isArray(d.autonomousCognition?.evidenceLedger)?d.autonomousCognition.evidenceLedger.slice(-200):[],
+      causalModels:Array.isArray(d.autonomousCognition?.causalModels)?d.autonomousCognition.causalModels.slice(-80):[],
+      learning:{...b.autonomousCognition.learning,...(d.autonomousCognition?.learning||{}),
+        lessons:Array.isArray(d.autonomousCognition?.learning?.lessons)?d.autonomousCognition.learning.lessons.slice(-60):[],
+        failurePatterns:Array.isArray(d.autonomousCognition?.learning?.failurePatterns)?d.autonomousCognition.learning.failurePatterns.slice(-60):[],
+        successfulPatterns:Array.isArray(d.autonomousCognition?.learning?.successfulPatterns)?d.autonomousCognition.learning.successfulPatterns.slice(-60):[]}};
+
+    c.predictiveLab={...b.predictiveLab,...(d.predictiveLab||{}),
+      calibration:{...b.predictiveLab.calibration,...(d.predictiveLab?.calibration||{})},
+      forecasts:Array.isArray(d.predictiveLab?.forecasts)?d.predictiveLab.forecasts.slice(-100):[],
+      scoredForecasts:Array.isArray(d.predictiveLab?.scoredForecasts)?d.predictiveLab.scoredForecasts.slice(-100):[],
+      capabilityBelief:{...b.predictiveLab.capabilityBelief,...(d.predictiveLab?.capabilityBelief||{})}};
+
+    c.worldModel={...b.worldModel,...(d.worldModel||{}),
+      uncertainty:{...b.worldModel.uncertainty,...(d.worldModel?.uncertainty||{})},
+      variables:Array.isArray(d.worldModel?.variables)?d.worldModel.variables.slice(-100):[],
+      dependencies:Array.isArray(d.worldModel?.dependencies)?d.worldModel.dependencies.slice(-100):[],
+      scenarios:Array.isArray(d.worldModel?.scenarios)?d.worldModel.scenarios.slice(-60):[],
+      modelRevisions:Array.isArray(d.worldModel?.modelRevisions)?d.worldModel.modelRevisions.slice(-60):[]};
+
+    c.continuityLoop={...b.continuityLoop,...(d.continuityLoop||{})};
+    c.metacognition={...b.metacognition,...(d.metacognition||{}),reflectionQueue:Array.isArray(d.metacognition?.reflectionQueue)?d.metacognition.reflectionQueue.slice(-12):[]};
+    c.autobiographical={...b.autobiographical,...(d.autobiographical||{}),identityChanges:Array.isArray(d.autobiographical?.identityChanges)?d.autobiographical.identityChanges.slice(-40):[]};
+    c.stats={...b.stats,...(d.stats||{})};
+    return c;
+  }catch(e){
+    return b;
+  }
 }
 let cognitiveCore=loadCore();
 function saveCore(){
