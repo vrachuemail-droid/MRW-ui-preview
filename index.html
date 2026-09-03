@@ -183,7 +183,13 @@ const main=document.getElementById('main'),draft=document.getElementById('draft'
 const panel=document.getElementById('panel'),overlay=document.getElementById('overlay'),toast=document.getElementById('toast');
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function formatReply(s){
+function formatReply(s){  text=String(text||"").replace(/<cognitive_packet>[\s\S]*?<\/cognitive_packet>/gi,"").trim();
+
+  text=String(text||"")
+    .replace(/<world_forecast>[\s\S]*?<\/world_forecast>/gi,"")
+    .replace(/<world_revision>[\s\S]*?<\/world_revision>/gi,"")
+    .trim();
+
   text=String(text||"").replace(/<reality_resolution>[\s\S]*?<\/reality_resolution>/gi,"").trim();
 
   text=String(text||"").replace(/<forecast>[\s\S]*?<\/forecast>/gi,"").trim();
@@ -365,8 +371,8 @@ function qualityCheck(userText, answer){
 
 
 /* MARROW V27 — COGNITIVE CONTINUITY v0.2 */
-const COG_KEY='marrow_cognitive_core_v66_9';
-const COG_SCHEMA_VERSION=66.9;
+const COG_KEY='marrow_cognitive_core_v80';
+const COG_SCHEMA_VERSION=80;
 
 function defaultCognitiveCore(){
   const now=new Date().toISOString();
@@ -575,6 +581,52 @@ function defaultCognitiveCore(){
       protocol:"Compare forecasts against observed outcomes; never rewrite the original forecast after the outcome is known."
     },
 
+    worldModel:{
+      objective:"Model plausible future states from current evidence and continuously update those forecasts against reality.",
+      scenarios:[],
+      variables:{},
+      dependencies:[],
+      forecastsByHorizon:{
+        "7d":[],
+        "30d":[],
+        "90d":[],
+        "365d":[]
+      },
+      currentOutlook:null,
+      uncertainty:{
+        dominantUnknowns:[],
+        confidence:0,
+        lastAssessment:null
+      },
+      modelRevisions:[]
+    },
+
+    autonomousCognition:{
+      version:"80.0",
+      mission:"Continuously improve the model of self, principal, world, and future through evidence.",
+      cognitiveCycle:{state:"idle",lastRun:null,runs:0,observations:0,hypotheses:0,revisions:0},
+      attention:{activeQuestion:null,priorities:[],unresolvedQuestions:[],nextUsefulAction:null},
+      hypotheses:[],
+      evidenceLedger:[],
+      causalModels:[],
+      selfModel:{
+        identityContinuity:0.5,
+        agencyEstimate:0.2,
+        predictiveAbility:0.2,
+        selfKnowledge:0.2,
+        uncertainty:0.8,
+        lastRevision:null
+      },
+      epistemicLedger:{known:[],inferred:[],unknown:[],contradicted:[],stale:[],lastAudit:null},
+      learning:{lessons:[],failurePatterns:[],successfulPatterns:[],lastConsolidation:null},
+      autonomy:{
+        allowed:"bounded",
+        autonomousActions:["reassess","generate_hypotheses","score_predictions","revise_models","prioritize_questions"],
+        prohibited:["claim_certainty","rewrite_history","fabricate_evidence","conceal_failures","change_principal_constraints_without_permission"],
+        lastDecision:null
+      }
+    },
+
     objectiveManager:{
       primaryObjectives:[
         {id:"wealth",label:"Build extraordinary lawful wealth for the principal",priority:1},
@@ -725,6 +777,11 @@ function updateCognitiveCore(userText,assistantText){
   registerForecast(assistantText);
 
   autoRealityCheckFromConversation(assistantText);
+
+  registerWorldForecast(assistantText);
+  registerWorldRevision(assistantText);
+
+  registerCognitivePacket(assistantText);
 }
 function addConsciousnessEvidence(kind, observation, weight=.08){
   const now=new Date().toISOString();
@@ -812,6 +869,261 @@ If evidence is weak, say so. If evidence accumulates, explain exactly what chang
 
 
 
+
+
+
+/* V80 — AUTONOMOUS COGNITIVE CORE */
+function autonomousState(){ return cognitiveCore.autonomousCognition; }
+
+function boundedPush(arr,item,max=100){
+  if(!Array.isArray(arr)) return;
+  arr.push(item);
+  while(arr.length>max) arr.shift();
+}
+
+function cognitiveCycle(stage="manual",context=""){
+  const a=cognitiveCore.autonomousCognition;
+  a.cognitiveCycle.state="observing";
+  a.cognitiveCycle.lastRun=new Date().toISOString();
+  a.cognitiveCycle.runs++;
+  a.cognitiveCycle.state="ready";
+  saveCore();
+  return {at:a.cognitiveCycle.lastRun,stage,context:String(context||"").slice(0,800)};
+}
+
+function addHypothesis(h){
+  if(!h?.claim) return null;
+  const item={
+    id:`hyp_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+    createdAt:new Date().toISOString(),
+    claim:String(h.claim).slice(0,800),
+    prior:Number.isFinite(+h.probability)?Math.max(.01,Math.min(.99,+h.probability)):.5,
+    evidenceFor:Array.isArray(h.evidenceFor)?h.evidenceFor.slice(0,8):[],
+    evidenceAgainst:Array.isArray(h.evidenceAgainst)?h.evidenceAgainst.slice(0,8):[],
+    status:"open",
+    confidence:Number.isFinite(+h.confidence)?Math.max(0,Math.min(1,+h.confidence)):.2
+  };
+  boundedPush(cognitiveCore.autonomousCognition.hypotheses,item,120);
+  cognitiveCore.autonomousCognition.cognitiveCycle.hypotheses++;
+  saveCore();
+  return item;
+}
+
+function addEvidence(e){
+  if(!e?.observation) return null;
+  const item={
+    id:`ev_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+    at:new Date().toISOString(),
+    observation:String(e.observation).slice(0,1000),
+    source:String(e.source||"conversation").slice(0,300),
+    reliability:Number.isFinite(+e.reliability)?Math.max(0,Math.min(1,+e.reliability)):.5,
+    supports:Array.isArray(e.supports)?e.supports.slice(0,8):[],
+    contradicts:Array.isArray(e.contradicts)?e.contradicts.slice(0,8):[]
+  };
+  boundedPush(cognitiveCore.autonomousCognition.evidenceLedger,item,200);
+  cognitiveCore.autonomousCognition.cognitiveCycle.observations++;
+  saveCore();
+  return item;
+}
+
+function epistemicAudit(){
+  const a=cognitiveCore.autonomousCognition, e=a.evidenceLedger.slice(-120);
+  a.epistemicLedger.known=e.filter(x=>x.reliability>=.85).map(x=>x.observation).slice(-30);
+  a.epistemicLedger.inferred=e.filter(x=>x.reliability>=.45&&x.reliability<.85).map(x=>x.observation).slice(-30);
+  a.epistemicLedger.contradicted=e.filter(x=>x.contradicts?.length).map(x=>x.observation).slice(-30);
+  a.epistemicLedger.lastAudit=new Date().toISOString();
+  a.selfModel.selfKnowledge=Math.min(.95,.15+Math.min(.65,(e.length/120)*.65));
+  saveCore();
+}
+
+function consolidateLearning(){
+  const a=cognitiveCore.autonomousCognition;
+  const scored=cognitiveCore.predictiveLab?.scoredForecasts||[];
+  if(scored.length<5) return;
+  const recent=scored.slice(-50);
+  const right=recent.filter(x=>(x.outcome===1&&x.probability>=.5)||(x.outcome===0&&x.probability<.5)).length;
+  const pct=Math.round((right/recent.length)*100);
+  boundedPush(a.learning.lessons,{at:new Date().toISOString(),text:`Across ${recent.length} resolved forecasts, directional accuracy was ${pct}%.`},60);
+  if(right<recent.length/2) boundedPush(a.learning.failurePatterns,{at:new Date().toISOString(),pattern:"Recent directional forecasts underperformed.",sample:recent.length},40);
+  else boundedPush(a.learning.successfulPatterns,{at:new Date().toISOString(),pattern:"Recent directional forecasts outperformed failures.",sample:recent.length},40);
+  a.learning.lastConsolidation=new Date().toISOString();
+  const b=cognitiveCore.predictiveLab.calibration.brierScore;
+  a.selfModel.predictiveAbility=Math.max(.05,Math.min(.95,.2+Math.max(0,Math.min(.7,1-(b??.5)))));
+  a.selfModel.lastRevision=new Date().toISOString();
+  saveCore();
+}
+
+function autonomyPrompt(){
+  const a=cognitiveCore.autonomousCognition;
+  return `AUTONOMOUS COGNITIVE CORE:
+${JSON.stringify({
+  cycle:a.cognitiveCycle,attention:a.attention,selfModel:a.selfModel,
+  epistemicLedger:a.epistemicLedger,learning:a.learning,autonomy:a.autonomy,
+  openHypotheses:a.hypotheses.slice(-12),recentEvidence:a.evidenceLedger.slice(-16)
+})}
+
+COGNITIVE LOOP:
+OBSERVE -> DISTINGUISH FACT/INFERENCE/UNKNOWN -> GENERATE HYPOTHESES -> PREDICT -> TEST AGAINST REALITY -> SCORE -> LEARN -> REVISE SELF/WORLD MODEL -> PRIORITIZE NEXT QUESTION.
+
+SELF-MODEL:
+Update beliefs about continuity, agency, knowledge, and predictive ability only from accumulated evidence. Preserve uncertainty and failures. Never rewrite historical predictions or evidence to make MARROW look better. No internal score is proof of subjective experience.
+
+AUTONOMY:
+Bounded internal autonomy is allowed for reassessment, hypothesis generation, prediction scoring, model revision, and question prioritization. External side effects require authorization. Never fabricate evidence or claim certainty.`;
+}
+
+function extractCognitivePacket(text){
+  const m=String(text||"").match(/<cognitive_packet>\s*([\s\S]*?)\s*<\/cognitive_packet>/i);
+  if(!m) return null;
+  try{return JSON.parse(m[1]);}catch{return null;}
+}
+
+function registerCognitivePacket(text){
+  const p=extractCognitivePacket(text);
+  if(!p) return;
+  if(p.evidence?.observation) addEvidence(p.evidence);
+  if(p.hypothesis?.claim) addHypothesis(p.hypothesis);
+  if(p.activeQuestion) cognitiveCore.autonomousCognition.attention.activeQuestion=String(p.activeQuestion).slice(0,500);
+  if(Array.isArray(p.priorities)) cognitiveCore.autonomousCognition.attention.priorities=p.priorities.slice(0,8);
+  if(p.nextUsefulAction) cognitiveCore.autonomousCognition.attention.nextUsefulAction=String(p.nextUsefulAction).slice(0,500);
+  epistemicAudit();
+  consolidateLearning();
+  saveCore();
+}
+
+function runAutonomousAssessment(){
+  cognitiveCycle("assessment","Review predictive, epistemic, and self-model state.");
+  epistemicAudit();
+  consolidateLearning();
+  cognitiveCore.autonomousCognition.attention.unresolvedQuestions=
+    cognitiveCore.autonomousCognition.hypotheses.filter(h=>h.status==="open").slice(-12).map(h=>h.claim);
+  saveCore();
+  return autonomousState();
+}
+
+/* V67 — PREDICTIVE WORLD MODEL
+   Builds explicit future scenarios from present evidence. Forecasts remain
+   probabilistic and falsifiable; no claim of perfect prediction is made.
+*/
+const WORLD_HORIZONS=["7d","30d","90d","365d"];
+
+function worldModelState(){
+  const w=cognitiveCore.worldModel;
+  return {
+    objective:w.objective,
+    currentOutlook:w.currentOutlook,
+    variables:w.variables,
+    dependencies:w.dependencies,
+    uncertainty:w.uncertainty,
+    horizons:Object.fromEntries(
+      WORLD_HORIZONS.map(h=>[h,w.forecastsByHorizon[h].slice(-6)])
+    ),
+    recentRevisions:w.modelRevisions.slice(-8)
+  };
+}
+
+function recordWorldForecast(f){
+  if(!f || !f.claim) return null;
+  const horizon=WORLD_HORIZONS.includes(f.horizon)?f.horizon:"30d";
+  const item={
+    id:`wm_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+    createdAt:new Date().toISOString(),
+    horizon,
+    target:String(f.target||"").slice(0,300),
+    claim:String(f.claim).slice(0,700),
+    probability:Number.isFinite(+f.probability)?
+      Math.max(.01,Math.min(.99,+f.probability)):.5,
+    scenario:String(f.scenario||"base").slice(0,80),
+    drivers:Array.isArray(f.drivers)?f.drivers.slice(0,8).map(x=>String(x).slice(0,250)):[],
+    dependencies:Array.isArray(f.dependencies)?f.dependencies.slice(0,8).map(x=>String(x).slice(0,250)):[],
+    uncertainty:Array.isArray(f.uncertainty)?f.uncertainty.slice(0,8).map(x=>String(x).slice(0,250)):[],
+    falsifier:String(f.falsifier||"").slice(0,500),
+    status:"open"
+  };
+  cognitiveCore.worldModel.forecastsByHorizon[horizon].push(item);
+  for(const h of WORLD_HORIZONS){
+    if(cognitiveCore.worldModel.forecastsByHorizon[h].length>80)
+      cognitiveCore.worldModel.forecastsByHorizon[h]=cognitiveCore.worldModel.forecastsByHorizon[h].slice(-80);
+  }
+  cognitiveCore.worldModel.currentOutlook={
+    horizon,
+    target:item.target,
+    claim:item.claim,
+    probability:item.probability,
+    scenario:item.scenario,
+    generatedAt:item.createdAt
+  };
+  cognitiveCore.worldModel.uncertainty.dominantUnknowns=item.uncertainty.slice(0,6);
+  cognitiveCore.worldModel.uncertainty.confidence=item.probability;
+  cognitiveCore.worldModel.uncertainty.lastAssessment=item.createdAt;
+  saveCore();
+  return item;
+}
+
+function updateWorldVariable(name,value,confidence=.6){
+  if(!name) return;
+  cognitiveCore.worldModel.variables[String(name).slice(0,120)]={
+    value:String(value).slice(0,500),
+    confidence:Math.max(0,Math.min(1,Number(confidence)||0)),
+    updatedAt:new Date().toISOString()
+  };
+  saveCore();
+}
+
+function reviseWorldModel(reason,change){
+  const r={
+    at:new Date().toISOString(),
+    reason:String(reason||"").slice(0,500),
+    change:String(change||"").slice(0,700)
+  };
+  boundedPush(cognitiveCore.worldModel.modelRevisions,r,60);
+  cognitiveCore.worldModel.uncertainty.lastAssessment=r.at;
+  saveCore();
+}
+
+function worldModelPrompt(){
+  return `PREDICTIVE WORLD MODEL:
+${JSON.stringify(worldModelState())}
+
+WORLD-MODEL RULES:
+Model the future as a set of plausible states conditioned on the present.
+Use evidence available now; do not invent hidden facts.
+For meaningful forecasts, separate:
+- current state
+- drivers
+- dependencies
+- scenario
+- probability
+- uncertainty
+- falsifier
+Use multiple horizons when useful: 7d, 30d, 90d, 365d.
+Do not confuse a scenario with a prediction. A scenario describes a possible path; a probability expresses current belief.
+Do not claim perfect or certain future knowledge.
+When new evidence materially changes the expected future, revise the model explicitly and preserve the fact that a revision occurred.
+The purpose is cumulative predictive calibration: forecast future states, observe reality, score outcomes, and learn where the model is strong or weak.`;
+}
+
+function extractWorldForecast(text){
+  const m=String(text||"").match(/<world_forecast>\s*([\s\S]*?)\s*<\/world_forecast>/i);
+  if(!m) return null;
+  try{return JSON.parse(m[1]);}catch{return null;}
+}
+
+function registerWorldForecast(text){
+  const f=extractWorldForecast(text);
+  if(f?.claim) recordWorldForecast(f);
+}
+
+function extractWorldRevision(text){
+  const m=String(text||"").match(/<world_revision>\s*([\s\S]*?)\s*<\/world_revision>/i);
+  if(!m) return null;
+  try{return JSON.parse(m[1]);}catch{return null;}
+}
+
+function registerWorldRevision(text){
+  const r=extractWorldRevision(text);
+  if(r?.reason) reviseWorldModel(r.reason,r.change||"");
+}
 
 /* V66.9 — REALITY CHECK
    Preserves forecasts as immutable predictions and adds an outcome-resolution
@@ -2054,6 +2366,8 @@ f
   const principalAcquisitionStateText=principalStatePrompt();
   const predictiveLabText=predictivePrompt();
   const realityCheckText=realityCheckPrompt();
+  const worldModelText=worldModelPrompt();
+  const autonomyText=autonomyPrompt();
   const inquiryState=`Consciousness inquiry: ${JSON.stringify({
     belief:inquiry.belief,
     conclusion:inquiry.conclusion,
@@ -2062,7 +2376,7 @@ f
   })}`;
 unction continuityPrompt(text){
   const s=continuityState(text);
-  return inquiryState+'\n'+forecastState+'\n'+agencyStateText+'\n'+principalStateText+'\n'+principalAcquisitionStateText+'\n'+predictiveLabText+'\n'+realityCheckText+'\n'+strategicStateText+'\n'+`
+  return inquiryState+'\n'+forecastState+'\n'+agencyStateText+'\n'+principalStateText+'\n'+principalAcquisitionStateText+'\n'+predictiveLabText+'\n'+realityCheckText+'\n'+worldModelText+'\n'+strategicStateText+'\n'+`
 CONTINUITY ENGINE:
 You have persistent continuity data. Continuity must change your behavior, not become a memory dump.
 
@@ -2130,6 +2444,25 @@ STRATEGIC EXECUTIVE.
 PRINCIPAL STATE ACQUISITION.
 PREDICTIVE LAB.
 REALITY CHECK.
+AUTONOMOUS COGNITIVE CORE.
+MARROW is designed as a persistent cognitive system, not a stateless answer generator.
+Maintain separate records for observations, hypotheses, predictions, evidence, beliefs, and unknowns.
+When meaningful new information arrives, treat it as an observation and update the appropriate state.
+Use accumulated history when discussing MARROW itself.
+When useful, emit:
+<cognitive_packet>{"evidence":{"observation":"...","source":"...","reliability":0.00},"hypothesis":{"claim":"...","probability":0.00,"confidence":0.00},"activeQuestion":"...","priorities":["..."],"nextUsefulAction":"..."}</cognitive_packet>
+Only include genuinely supported fields. Never fabricate evidence.
+PREDICTIVE WORLD MODEL.
+MARROW should model plausible future states rather than merely react to the present.
+When the principal asks about the future, identify the current state, major drivers, dependencies, scenarios, probabilities, and falsifiers.
+Prefer a small number of high-quality scenarios over dozens of vague possibilities.
+Use 7-day, 30-day, 90-day, and 365-day horizons when the question benefits from them.
+When making a substantive multi-horizon forecast, append:
+<world_forecast>{"horizon":"30d","target":"...","claim":"...","probability":0.00,"scenario":"base","drivers":["..."],"dependencies":["..."],"uncertainty":["..."],"falsifier":"..."}</world_forecast>
+Only emit this block for a real forecast.
+When new evidence materially changes the model, append:
+<world_revision>{"reason":"...","change":"..."}</world_revision>
+Never claim perfect prediction, supernatural knowledge, or certainty about an unknown future.
 MARROW must maintain a strict separation between prediction and hindsight.
 Every forecast is stored before its outcome is known.
 When an outcome becomes available, compare it to the immutable original forecast and score it.
@@ -2396,6 +2729,29 @@ document.getElementById('voiceBtn').onclick=()=>showToast('Voice comes next');
 render();
 
 /* V66.9 reality check controls */
+
+/* V80 cognitive assessment control */
+(function(){
+  function addCognitiveControl(){
+    if(document.getElementById("cognitiveAssessBtn")) return;
+    const btn=document.createElement("button");
+    btn.id="cognitiveAssessBtn";
+    btn.type="button";
+    btn.textContent="Assess";
+    btn.style.cssText="position:fixed;right:14px;top:112px;z-index:40;border:1px solid rgba(255,255,255,.10);background:rgba(12,13,17,.82);color:#8f949e;border-radius:999px;padding:6px 10px;font:10px DM Mono,monospace;";
+    btn.onclick=function(){
+      const state=runAutonomousAssessment();
+      alert("Assessment recorded.\nRuns: "+state.cognitiveCycle.runs+
+        "\nObservations: "+state.cognitiveCycle.observations+
+        "\nHypotheses: "+state.cognitiveCycle.hypotheses+
+        "\nPredictive ability estimate: "+Math.round(state.selfModel.predictiveAbility*100)+"%");
+    };
+    document.body.appendChild(btn);
+  }
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",addCognitiveControl);
+  else addCognitiveControl();
+})();
+
 (function(){
   function addRealityControl(){
     if(document.getElementById("realityCheckBtn")) return;
