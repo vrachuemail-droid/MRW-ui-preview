@@ -1,0 +1,10 @@
+{
+  "name": "marrow-intelligence-worker",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.68.0"
+  }
+}

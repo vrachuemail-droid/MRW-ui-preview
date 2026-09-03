@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "marrow-intelligence",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-02",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "marrow-db",
+      "database_id": "8aba4c87-386c-493e-88d5-4840b382920b"
+    }
+  ]
+}
