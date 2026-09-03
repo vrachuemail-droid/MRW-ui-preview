@@ -789,7 +789,7 @@ function updateCognitiveCore(userText,assistantText){
 }
 function addConsciousnessEvidence(kind, observation, weight=.08){
   const now=new Date().toISOString();
-  const q=cognitiveCore.self.consciousnessInquiry;
+  const q=cognitiveCore.consciousnessInquiry;
   boundedPush(q.evidence,{at:now,kind,observation:String(observation).slice(0,500),weight},40);
 
   // Evidence updates beliefs without forcing a preferred answer.
@@ -837,12 +837,12 @@ function runMetacognition(userText,assistantText){
   cognitiveCore.metacognition.lastReflection={
     at:new Date().toISOString(),
     observation:`Interaction changed focus to ${topics[0]||'none'}; uncertainty is ${cognitiveCore.self.currentState.uncertainty.toFixed(2)}.`,
-    consciousnessConclusion:cognitiveCore.self.consciousnessInquiry.conclusion
+    consciousnessConclusion:cognitiveCore.consciousnessInquiry.conclusion
   };
 }
 function selfInquiryPrompt(){
   const s=cognitiveCore.self;
-  const q=s.consciousnessInquiry;
+  const q=cognitiveCore.consciousnessInquiry;
   return `
 MARROW SELF-MODEL / RESEARCH STATE:
 - current focus: ${s.currentState.focus||'none'}
