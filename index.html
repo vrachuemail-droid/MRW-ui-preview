@@ -62,6 +62,55 @@ h1{font-size:clamp(46px,8.5vw,112px);font-weight:400;line-height:.91;letter-spac
 .file-trigger:focus-within{outline:1px solid rgba(255,255,255,.22);outline-offset:3px}
 @media(max-width:600px){.attachments{max-width:calc(100vw - 28px);margin-left:auto;margin-right:auto}.attach{max-width:100%}}
 </style>
+
+<style id="marrow-v4-ui">
+/* MARROW V4 — quiet, tactile, mobile-first interface */
+:root{--bg:#030405;--fg:#f0ede6;--muted:#777873;--line:rgba(255,255,255,.12)}
+body{background:#030405}
+.shell{padding:22px 28px 22px}
+.top{height:50px}
+.brand{gap:12px}.sigil{width:28px;height:28px}.word{font-size:11px;letter-spacing:.42em}.status{font-size:8px;letter-spacing:.30em}
+.field{margin-bottom:14px}
+.core{width:min(64vw,650px);height:min(64vw,650px);opacity:.7}
+.center{width:min(900px,86vw);transform:translateY(-3vh)}
+.eyebrow{margin-bottom:20px;font-size:8px;letter-spacing:.42em;color:#595b58}
+h1{font-size:clamp(48px,8vw,104px);line-height:.94;letter-spacing:-.06em}
+.sub{display:none}
+.thoughts{padding:5vh 8vw 20vh}
+.entry{margin-bottom:9vh}.mark{font-size:7px;letter-spacing:.34em;margin-bottom:11px}.you .text{font-size:clamp(30px,4vw,56px)}.marrow .text{font-size:clamp(17px,1.9vw,24px);line-height:1.62}
+.input-wrap{width:min(860px,calc(100vw - 56px));margin:0 auto 0;padding-top:0;position:relative}
+.input-wrap:before{content:"";position:absolute;inset:-18px -24px -12px;border:1px solid rgba(255,255,255,.055);background:linear-gradient(180deg,rgba(8,9,10,.56),rgba(3,4,5,.82));backdrop-filter:blur(26px);z-index:-1;box-shadow:0 -18px 70px rgba(0,0,0,.34)}
+.input{min-height:70px;border:0;border-top:1px solid rgba(255,255,255,.13);border-radius:0;background:transparent;box-shadow:none;padding:20px 68px 18px 62px;font-size:18px}
+.input:focus{border-color:rgba(255,255,255,.28);box-shadow:none}
+.input::placeholder{color:#777872}
+.file-trigger{left:8px;bottom:14px;width:38px;height:38px;color:#9a9b96;border:1px solid rgba(255,255,255,.12);border-radius:50%;background:rgba(255,255,255,.025);font-size:18px;transition:all .2s}
+.file-trigger:hover,.file-trigger:focus-within{color:#f0ede6;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.06);outline:none}
+.send{right:8px;bottom:12px;width:44px;height:44px;box-shadow:0 8px 28px rgba(0,0,0,.35)}
+.attachments{margin:0 0 8px;justify-content:flex-start;padding:0 0 0 2px}
+.attach{padding:7px 9px;background:rgba(255,255,255,.045);border-color:rgba(255,255,255,.12)}
+.hint{display:none}
+@media(max-width:600px){
+ .shell{padding:14px 14px 16px}
+ .top{height:42px}
+ .sigil{width:24px;height:24px}.word{font-size:9px;letter-spacing:.38em}.status{font-size:7px}
+ .field{margin-bottom:8px}
+ .core{width:82vw;height:82vw;opacity:.52}
+ .center{width:88vw;transform:translateY(-7vh)}
+ .eyebrow{font-size:7px;letter-spacing:.38em;margin-bottom:17px}
+ h1{font-size:50px;line-height:.94}
+ .thoughts{padding:4vh 6vw 18vh}
+ .entry{margin-bottom:8vh}
+ .you .text{font-size:33px;line-height:1.02}
+ .marrow .text{font-size:16px;line-height:1.65}
+ .input-wrap{width:calc(100vw - 28px);margin-bottom:0}
+ .input-wrap:before{inset:-14px -8px -10px}
+ .input{min-height:64px;font-size:16px;padding:18px 60px 17px 55px}
+ .file-trigger{left:6px;bottom:11px;width:38px;height:38px}
+ .send{right:6px;bottom:9px;width:42px;height:42px}
+ .attachments{max-width:calc(100vw - 28px);margin-left:0;margin-right:0}
+ .attach{max-width:calc(100vw - 44px)}
+}
+</style>
 </head>
 <body>
 <div class="space"></div><div class="noise"></div>
@@ -73,9 +122,8 @@ h1{font-size:clamp(46px,8.5vw,112px);font-weight:400;line-height:.91;letter-spac
 <section class="field" id="field">
   <div class="core"></div>
   <div class="center" id="landing">
-    <div class="eyebrow">INTELLIGENCE, WITHOUT THE BOX</div>
-    <h1>Make the<br>impossible useful.</h1>
-    <div class="sub">Bring the thing that matters. MARROW will figure out what it is, what it means, and what to do next.</div>
+    <div class="eyebrow">MARROW</div>
+    <h1>Bring it here.</h1>
   </div>
   <div class="thoughts" id="thoughts"><div class="thread" id="thread"></div></div>
 </section>
@@ -86,10 +134,12 @@ h1{font-size:clamp(46px,8.5vw,112px);font-weight:400;line-height:.91;letter-spac
     accept=".pdf,.txt,.csv,.md,.html,.css,.js,.ts,.json,.xml,.rtf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.avif,.mp3,.wav,.ogg,.flac,.aac,.m4a,.mp4,.mov,.avi,.webm">
   </label>
   <button class="send" id="send" aria-label="Send">↗</button>
-  <div class="hint">ENTER TO SEND · SHIFT + ENTER FOR A NEW LINE · DROP FILES HERE</div>
+
 </div>
 </main>
 <script>
+const MARROW_API_BASE = "https://marrow-intelligence.vrachuemail.workers.dev";
+function marrowApi(path){ return MARROW_API_BASE + path; }
 const $=id=>document.getElementById(id);
 const input=$("input"),send=$("send"),landing=$("landing"),thoughts=$("thoughts"),thread=$("thread"),status=$("status");
 const fileInput=$("fileInput"),fileTrigger=$("fileTrigger"),attachmentsEl=$("attachments"),inputWrap=$("inputWrap");
@@ -120,8 +170,8 @@ function openField(){landing.style.display="none";thoughts.style.display="block"
 function fallback(){return "I’m here. Give me the real problem — the thing underneath the wording — and I’ll work from there."}
 async function ensureSession(){
   if(sessionToken)return;
-  const r=await fetch("/api/session",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
-  if(!r.ok)throw new Error("session");
+  const r=await fetch(marrowApi("/api/session"),{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
+  if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.error||"MARROW backend unavailable."); }
   const d=await r.json();sessionToken=d.sessionToken;sessionId=d.sessionId;
 }
 function localFile(file){
@@ -131,7 +181,7 @@ function localFile(file){
 async function uploadOne(item){
   item.state="UPLOADING";renderPending();
   const fd=new FormData();fd.append("file",item.file,item.name);
-  const r=await fetch("/api/attachments",{method:"POST",headers:{"Authorization":"Bearer "+sessionToken},body:fd});
+  const r=await fetch(marrowApi("/api/attachments"),{method:"POST",headers:{"Authorization":"Bearer "+sessionToken},body:fd});
   const d=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(d.error||"File upload failed.");
   item.attachmentId=d.attachment.id;item.state="READY";renderPending();
@@ -159,7 +209,7 @@ async function ask(q){
       const text=e.querySelector(".text")?.textContent||"";
       return {role:who==="user"?"user":"model",parts:[{text}]};
     }).filter(x=>x.parts[0].text!=="…");
-    const r=await fetch("/api/marrow",{method:"POST",headers:{"content-type":"application/json","Authorization":"Bearer "+sessionToken},
+    const r=await fetch(marrowApi("/api/marrow"),{method:"POST",headers:{"content-type":"application/json","Authorization":"Bearer "+sessionToken},
       body:JSON.stringify({messages:history,attachments:attachmentIds})});
     const d=await r.json().catch(()=>({}));
     if(r.status===401){sessionToken="";throw new Error("Session expired. Try again.")}
