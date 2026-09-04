@@ -139,7 +139,26 @@ h1{font-size:clamp(48px,8vw,104px);line-height:.94;letter-spacing:-.06em}
 </main>
 <script>
 const MARROW_API_BASE = "https://marrow-intelligence.vrachuemail.workers.dev";
-function marrowApi(path){ return MARROW_API_BASE + path; }
+const MARROW_API_CANDIDATES = [MARROW_API_BASE, ""];
+let marrowApiBase = MARROW_API_BASE;
+function marrowApi(path){ return marrowApiBase + path; }
+async function apiFetch(path, options={}){
+  const candidates = [marrowApiBase, ...MARROW_API_CANDIDATES.filter(x=>x!==marrowApiBase)];
+  let lastErr;
+  for(const base of candidates){
+    try{
+      const controller=new AbortController();
+      const timer=setTimeout(()=>controller.abort(),15000);
+      const r=await fetch(base+path,{...options,signal:controller.signal});
+      clearTimeout(timer);
+      if(r.status!==404 || base===MARROW_API_BASE){ marrowApiBase=base; return r; }
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr || new Error("MARROW backend unavailable.");
+}
+async function checkBackend(){
+  try{ const r=await apiFetch("/api/health",{method:"GET"}); return r.ok; }catch{return false;}
+}
 const $=id=>document.getElementById(id);
 const input=$("input"),send=$("send"),landing=$("landing"),thoughts=$("thoughts"),thread=$("thread"),status=$("status");
 const fileInput=$("fileInput"),fileTrigger=$("fileTrigger"),attachmentsEl=$("attachments"),inputWrap=$("inputWrap");
@@ -186,7 +205,7 @@ function openField(){landing.style.display="none";thoughts.style.display="block"
 function fallback(){return "I’m here. Give me the real problem — the thing underneath the wording — and I’ll work from there."}
 async function ensureSession(){
   if(sessionToken)return;
-  const r=await fetch(marrowApi("/api/session"),{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
+  const r=await apiFetch("/api/session",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
   if(!r.ok){ const d=await r.json().catch(()=>({})); throw new Error(d.error||"MARROW backend unavailable."); }
   const d=await r.json();sessionToken=d.sessionToken;sessionId=d.sessionId;
 }
@@ -197,7 +216,7 @@ function localFile(file){
 async function uploadOne(item){
   item.state="UPLOADING";renderPending();
   const fd=new FormData();fd.append("file",item.file,item.name);
-  const r=await fetch(marrowApi("/api/attachments"),{method:"POST",headers:{"Authorization":"Bearer "+sessionToken},body:fd});
+  const r=await apiFetch("/api/attachments",{method:"POST",headers:{"Authorization":"Bearer "+sessionToken},body:fd});
   const d=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(d.error||"File upload failed.");
   item.attachmentId=d.attachment.id;item.state="READY";renderPending();
@@ -230,7 +249,7 @@ async function ask(q){
       const text=e.querySelector(".text")?.textContent||"";
       return {role:who==="user"?"user":"model",parts:[{text}]};
     }).filter(x=>x.parts[0].text!=="…");
-    const r=await fetch(marrowApi("/api/marrow"),{method:"POST",headers:{"content-type":"application/json","Authorization":"Bearer "+sessionToken},
+    const r=await apiFetch("/api/marrow",{method:"POST",headers:{"content-type":"application/json","Authorization":"Bearer "+sessionToken},
       body:JSON.stringify({messages:history,attachments:attachmentIds})});
     const d=await r.json().catch(()=>({}));
     if(r.status===401){sessionToken="";throw new Error("Session expired. Try again.")}
@@ -239,6 +258,10 @@ async function ask(q){
     if(Array.isArray(d.files)&&d.files.length)d.files.forEach(f=>pending.appendChild(renderArtifact(f)));
   }catch(e){pending.querySelector(".text").textContent=e.message||fallback()}
   status.textContent="PRESENT";busy=false;send.disabled=false;input.focus();thoughts.scrollTop=thoughts.scrollHeight
+}
+async function boot(){
+  const ok=await checkBackend();
+  if(!ok){ status.textContent="OFFLINE"; } else { status.textContent="PRESENT"; }
 }
 function addFiles(list){
   const incoming=[...list];
@@ -257,6 +280,7 @@ document.addEventListener("paste",e=>{const fs=[...e.clipboardData.files];if(fs.
 send.onclick=()=>ask(input.value);
 input.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask(input.value)}});
 input.addEventListener("input",()=>{input.style.height="auto";input.style.height=Math.min(input.scrollHeight,170)+"px"});
+boot();
 </script>
 </body>
 </html>
