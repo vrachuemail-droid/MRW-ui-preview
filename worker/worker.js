@@ -1,6 +1,5 @@
 const MODEL = "gemini-3.8-flash";
 const ALLOWED_ORIGIN = "https://vrachuemail-droid.github.io";
-const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)*github\.io$/i;
 const MAX_BODY_BYTES = 90000;
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const MAX_ATTACHMENTS_PER_MESSAGE = 5;
@@ -262,25 +261,20 @@ export default {
     }
 
     const cors = corsHeaders(origin);
-    if (origin && origin !== ALLOWED_ORIGIN && !ALLOWED_ORIGIN_PATTERN.test(origin)) {
+    if (origin && origin !== ALLOWED_ORIGIN) {
       return json({ error: "Origin not allowed." }, 403, cors);
     }
 
     const url = new URL(request.url);
 
-    if (url.pathname === "/" && request.method === "GET") {
-      return new Response("MARROW operational backend", { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
-    }
-
     if (url.pathname === "/api/health" && request.method === "GET") {
       return json({
         ok: true,
         model: MODEL,
-        version: "101.5.0",
+        version: "101.4.1-hardened",
         grounding: true,
         persistence: Boolean(env.DB),
         authentication: Boolean(env.SESSION_SECRET),
-        routes: ["/api/health","/api/session","/api/marrow","/api/attachments","/api/create-file"],
         distributedRateLimit: Boolean(env.RATE_LIMITER)
       }, 200, cors);
     }
@@ -314,7 +308,7 @@ export default {
 
 function corsHeaders(origin) {
   return {
-    "Access-Control-Allow-Origin": origin || ALLOWED_ORIGIN,
+    "Access-Control-Allow-Origin": origin === ALLOWED_ORIGIN ? ALLOWED_ORIGIN : ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "POST,GET,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Vary": "Origin",
@@ -800,10 +794,7 @@ async function handleCreateFile(request, env, cors) {
   if(!(await rateLimit(request,env,`file:${session.sessionId}`,10,60000))) return json({error:"Too many file creation requests. Please wait a moment."},429,cors);
   let body; try { body=await readJsonBounded(request); } catch { return json({error:"Invalid request."},400,cors); }
   const prompt=String(body?.prompt||"").trim(); if(!prompt) return json({error:"No file request supplied."},400,cors);
-  let resolvedAttachments=[];
-  try { resolvedAttachments=await resolveAttachments(env, session.sessionId, body?.attachments); }
-  catch { return json({error:"Could not resolve attached files."},400,cors); }
-  try { return json({ok:true,file:await generateFileArtifact(prompt,env,resolvedAttachments)},200,cors); }
+  try { return json({ok:true,file:await generateFileArtifact(prompt,env)},200,cors); }
   catch(e) { console.log("File creation failure",e?.message||"unknown"); return json({error:e?.message||"MARROW could not create the file."},502,cors); }
 }
 
