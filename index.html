@@ -555,7 +555,7 @@ body{overflow:hidden}
       <button id="saveApiBtn" style="padding:9px 12px;border:1px solid var(--line);border-radius:9px;color:#d9e6f4">Save key</button>
       <button id="removeApiBtn" style="padding:9px 12px;border:1px solid var(--line);border-radius:9px;color:#858c95">Remove</button>
     </div>
-    <div style="font:9px 'DM Mono';color:#5f6670;line-height:1.5;margin-top:12px">Prototype mode: a key used directly in a public static page can be abused if exposed. We will move it server-side before launch.</div>
+    <div style="font:9px 'DM Mono';color:#5f6670;line-height:1.5;margin-top:12px">MARROW uses its protected intelligence server. Never place a private key in this page.</div>
   </div>
 
   <main class="main" id="main"></main>
@@ -569,7 +569,8 @@ body{overflow:hidden}
     </div>
     <div class="composer">
       <div class="composer-orbit" aria-hidden="true"></div>
-      <textarea id="draft" placeholder="Place a thought here…" rows="1"></textarea>
+      <div id="composerStatus" class="composer-status" aria-live="polite"></div>
+      <textarea id="draft" placeholder="Bring the thought here…" rows="1"></textarea>
       <div class="composer-bottom"><span id="helper">Bring MARROW the unfinished thought.</span><button class="send" id="send" disabled>↗</button></div>
     </div>
     <div class="privacy">PRIVATE BY DESIGN · MARROW IS LISTENING</div>
@@ -599,6 +600,10 @@ html,body{background:var(--bg)!important}body{overflow:hidden!important}
 .panel{top:78px!important;left:24px!important;background:rgba(10,13,17,.96)!important;border:1px solid var(--hair)!important;box-shadow:0 30px 90px rgba(0,0,0,.55)!important;z-index:30}.search-modal{z-index:31!important;background:rgba(10,13,17,.97)!important;border:1px solid var(--hair)!important;box-shadow:0 30px 90px rgba(0,0,0,.6)!important}
 .toast{z-index:40!important}
 @media(max-width:700px){.presence-bar{height:60px;padding:0 14px}.mobile-menu{display:grid!important;width:34px!important;height:34px!important;margin-right:9px}.identity-word{font-size:11px;letter-spacing:.22em}.identity-state{display:none}.top-actions .search-btn span,.top-actions #libraryBtn{display:none}.home{padding:35px 18px 245px!important}.home:before{width:112vw;height:112vw}.home:after{width:72vw;height:72vw}.hero-copy h1{font-size:clamp(52px,15vw,78px)!important}.hero-copy p{font-size:13px!important;max-width:330px!important}.starter-row{grid-template-columns:1fr!important;width:100%!important;margin-top:40px!important}.starter{min-height:82px!important}.starter small{margin-top:5px!important}.conversation{padding:42px 18px 250px!important}.user-thought{font-size:39px!important;margin:45px 0 38px!important}.composer-wrap{width:calc(100% - 18px)!important;padding-bottom:max(10px,env(safe-area-inset-bottom))!important}.adaptive-state em{display:none}.privacy{font-size:7px!important}.composer{border-radius:18px!important;padding:12px 11px 9px!important}}
+
+/* Seamless interaction layer */
+.marrow-request-error{position:fixed!important;left:50%!important;bottom:calc(170px + env(safe-area-inset-bottom))!important;transform:translateX(-50%)!important;display:flex!important;align-items:center!important;gap:10px!important;padding:8px 12px!important;border:1px solid rgba(220,231,239,.08)!important;border-radius:999px!important;background:rgba(9,12,15,.72)!important;color:#77828d!important;font:9px 'DM Mono'!important;letter-spacing:.08em!important;backdrop-filter:blur(18px)!important;box-shadow:0 12px 45px rgba(0,0,0,.28)!important;z-index:25!important;animation:quietIn .24s ease both!important}.marrow-request-error button{border:0!important;background:transparent!important;color:#cbd7df!important;font:inherit!important;letter-spacing:inherit!important;padding:2px 0!important;cursor:pointer!important}.marrow-request-error button:hover{text-decoration:underline!important}.composer.is-busy{opacity:.94}.composer.is-busy .send{opacity:.55}.composer-status{min-height:0!important;height:0!important;overflow:hidden!important;opacity:0!important;transition:height .2s,opacity .2s,margin .2s!important;font:9px 'DM Mono'!important;letter-spacing:.09em!important;color:#69747e!important}.composer-status.show{height:18px!important;opacity:1!important;margin-bottom:5px!important}.composer-status[data-kind="working"]{color:#8fa8bb!important}.composer-status[data-kind="error"]{color:#a8afb6!important}@keyframes quietIn{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+@media(max-width:700px){.marrow-request-error{bottom:calc(155px + env(safe-area-inset-bottom))!important;max-width:calc(100% - 36px)!important;white-space:nowrap!important;overflow:hidden!important}.marrow-request-error>div{overflow:hidden!important;text-overflow:ellipsis!important}.composer-status{font-size:8px!important}}
 @media(prefers-reduced-motion:reduce){.field-glow{animation:none}.starter{transition:none}}
 </style>
 <script>
@@ -645,7 +650,7 @@ function updateMode(){
  document.querySelectorAll('.mode').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
  const helper=document.getElementById('helper');
  if(helper) helper.textContent=helpers[mode]||'Open exchange';
- draft.placeholder='Ask anything…';
+ draft.placeholder='Bring the thought here…';
  save();
 }
 function tokenize(s){
@@ -1016,16 +1021,19 @@ Respond directly to the user's current message.`;
      signal:controller.signal
    });
    const data=await r.json().catch(()=>({}));
-   if(!r.ok) return {ok:false,text:`The intelligence server couldn't respond.\n\n${data?.error||`HTTP ${r.status}`}`};
+   if(!r.ok){
+     const transient=r.status===408||r.status===425||r.status===429||r.status>=500;
+     return {ok:false,transient,text:transient?'MARROW is briefly busy.':(data?.error||`MARROW couldn't complete that.`)};
+   }
    const answer=String(data?.text||'').trim();
-   if(!answer) return {ok:false,text:'The intelligence server returned no response. Try again.'};
+   if(!answer) return {ok:false,transient:true,text:'MARROW returned no response.'};
    const qc=qualityCheck(text,answer);
    if(!qc.ok) console.warn('MARROW quality advisory:',qc);
    updateCognitiveCore(text,answer);
    return {ok:true,text:answer,model:data?.model||'marrow-backend',qualityAdvisory:qc.issues};
  }catch(e){
-   if(e?.name==='AbortError') return {ok:false,text:'MARROW’s intelligence server took too long to answer. Try again.'};
-   return {ok:false,text:`MARROW could not reach its intelligence server.\n\n${e?.message||'Network error.'}`};
+   if(e?.name==='AbortError') return {ok:false,transient:true,text:'MARROW is taking a moment.'};
+   return {ok:false,transient:true,text:'MARROW is temporarily unreachable.'};
  }finally{
    clearTimeout(timer);
  }
@@ -1049,9 +1057,13 @@ function renderConversation(){
  if(requestError){
    const box=document.createElement('div');
    box.className='marrow-request-error';
-   box.innerHTML='<div>'+esc(requestError)+'</div><button id="retryBtn">Try again</button>';
+   box.innerHTML='<div>'+esc(requestError)+'</div><button id="retryBtn">Retry</button>';
    main.appendChild(box);
-   document.getElementById('retryBtn').onclick=()=>{requestError='';const last=messages.findLast?.(m=>m.role==='user')||messages.filter(m=>m.role==='user').slice(-1)[0];if(last)sendMessage(last.text)};
+   document.getElementById('retryBtn').onclick=()=>{
+     requestError='';
+     const last=messages.findLast?.(m=>m.role==='user')||messages.filter(m=>m.role==='user').slice(-1)[0];
+     if(last){ draft.value=last.text; send.disabled=false; sendMessage(last.text); }
+   };
  }
  document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>action(b.dataset.action));
  main.scrollTop=main.scrollHeight;
@@ -1088,40 +1100,46 @@ async function action(a){
 async function sendMessage(textOverride){
   if(requestBusy) return;
   const input=document.getElementById('draft');
-  // onclick passes a MouseEvent; only treat explicit strings as overrides.
   const text=(typeof textOverride === 'string' ? textOverride : input.value).trim();
   if(!text) return;
 
-  requestBusy=true;
-  requestError='';
+  requestBusy=true; requestError='';
   clearTimeout(window.marrowRecoveryTimer);
-  window.marrowRecoveryTimer=setTimeout(()=>{
-    if(requestBusy){
-      requestError='The request is taking too long. You can try again.';
-      render();
-    }
-  },9000);
   send.disabled=true;
   document.querySelector('.composer')?.classList.add('is-busy');
+  setComposerStatus('Listening…','working');
 
   const sentMode=mode;
   messages.push({role:'user',text,mode:sentMode});
   input.value='';
-  save();
-  render();
+  save(); render();
   main.insertAdjacentHTML('beforeend','<div class="marrow-typing" aria-live="polite"><span></span><span></span><span></span><small>MARROW is thinking</small></div>');
 
   try{
-    const result=await responseFor(text);
+    let result=await responseFor(text);
+    // Recover transparently from common transient capacity/network failures.
+    if(result && !result.ok && result.transient){
+      setComposerStatus('One moment…','working');
+      await new Promise(r=>setTimeout(r,850));
+      result=await responseFor(text);
+    }
     if(result && result.ok && result.text){
       messages.push({role:'assistant',text:result.text,model:result.model});
-      requestError='';
-      save();
+      requestError=''; save();
+      setComposerStatus('','working');
     }else{
-      requestError=(result && result.text) || 'The intelligence layer could not respond.';
+      // Keep the user's thought intact and put it back in the composer so a
+      // failure never destroys work or forces the user to reconstruct it.
+      requestError=(result && result.text) || 'MARROW is temporarily unavailable.';
+      input.value=text;
+      send.disabled=false;
+      setComposerStatus('Your thought is safe.','error');
     }
   }catch(err){
-    requestError=err?.message || 'The intelligence layer could not respond.';
+    requestError='MARROW is temporarily unavailable.';
+    input.value=text;
+    send.disabled=false;
+    setComposerStatus('Your thought is safe.','error');
   }finally{
     clearTimeout(window.marrowRecoveryTimer);
     requestBusy=false;
@@ -1133,6 +1151,14 @@ async function sendMessage(textOverride){
 
 function closePanels(){panel.classList.add('hidden');overlay.classList.add('hidden');document.getElementById('searchModal').classList.add('hidden');document.getElementById('apiModal').classList.add('hidden')}
 function showToast(t){toast.textContent=t;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),1500)}
+function setComposerStatus(text, kind='working') {
+  const el=document.getElementById('composerStatus');
+  if(!el) return;
+  el.textContent=text||'';
+  el.dataset.kind=kind;
+  el.classList.toggle('show',Boolean(text));
+}
+
 
 document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{mode=b.dataset.mode;updateMode()});
 draft.addEventListener('input',()=>{send.disabled=!draft.value.trim()});
