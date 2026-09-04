@@ -51,11 +51,15 @@ h1{font-size:clamp(46px,8.5vw,112px);font-weight:400;line-height:.91;letter-spac
 .attach-thumb{width:30px;height:30px;object-fit:cover;border-radius:1px;background:#0c0d0e;flex:0 0 auto}
 .attach-icon{width:30px;height:30px;display:grid;place-items:center;font:300 10px "DM Mono",monospace;color:#a5a6a1;border:1px solid rgba(255,255,255,.08);flex:0 0 auto}
 .attach-meta{min-width:0;flex:1}.attach-name{font:300 10px "DM Mono",monospace;color:#b7b7b2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.attach-state{font:300 8px "DM Mono",monospace;color:#5e605d;letter-spacing:.08em;text-transform:uppercase;margin-top:3px}
+.artifact{display:flex;align-items:center;gap:10px;margin-top:16px;padding:11px 13px;border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.035);max-width:520px}.artifact-name{font:300 10px "DM Mono",monospace;color:#c9c7c0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.artifact-meta{font:300 8px "DM Mono",monospace;color:#666864;text-transform:uppercase;letter-spacing:.08em}.artifact-download{border:1px solid rgba(255,255,255,.12);background:transparent;color:#d9d6cf;padding:7px 10px;font:300 9px "DM Mono",monospace;cursor:pointer}.artifact-download:hover{background:rgba(255,255,255,.08)}
 .attach-remove{border:0;background:none;color:#777;cursor:pointer;font:300 15px "DM Mono",monospace;padding:2px 4px}.attach-remove:hover{color:#eee}
 .file-trigger{position:absolute;z-index:6;left:12px;bottom:12px;width:42px;height:42px;border:0;background:transparent;color:#777;cursor:pointer;font:300 20px "DM Mono",monospace}.file-trigger:hover{color:#eee}
 .input{padding-left:58px}
 .drop-active .input-wrap{outline:1px solid rgba(255,255,255,.24);outline-offset:6px}
-#fileInput{display:none}
+#fileTrigger{display:grid;place-items:center;overflow:hidden}
+#fileTrigger span{position:relative;z-index:1;pointer-events:none}
+#fileInput{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;display:block;z-index:2}
+.file-trigger:focus-within{outline:1px solid rgba(255,255,255,.22);outline-offset:3px}
 @media(max-width:600px){.attachments{max-width:calc(100vw - 28px);margin-left:auto;margin-right:auto}.attach{max-width:100%}}
 </style>
 </head>
@@ -78,9 +82,9 @@ h1{font-size:clamp(46px,8.5vw,112px);font-weight:400;line-height:.91;letter-spac
 <div class="input-wrap" id="inputWrap">
   <div class="attachments" id="attachments"></div>
   <textarea class="input" id="input" rows="1" placeholder="Begin." autocomplete="off" spellcheck="true"></textarea>
-  <label class="file-trigger" id="fileTrigger" for="fileInput" aria-label="Attach file">+</label>
-  <input id="fileInput" type="file" multiple
+  <label class="file-trigger" id="fileTrigger" aria-label="Attach file"><span>+</span><input id="fileInput" type="file" multiple
     accept=".pdf,.txt,.csv,.md,.html,.css,.js,.ts,.json,.xml,.rtf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.avif,.mp3,.wav,.ogg,.flac,.aac,.m4a,.mp4,.mov,.avi,.webm">
+  </label>
   <button class="send" id="send" aria-label="Send">↗</button>
   <div class="hint">ENTER TO SEND · SHIFT + ENTER FOR A NEW LINE · DROP FILES HERE</div>
 </div>
@@ -91,11 +95,12 @@ const input=$("input"),send=$("send"),landing=$("landing"),thoughts=$("thoughts"
 const fileInput=$("fileInput"),fileTrigger=$("fileTrigger"),attachmentsEl=$("attachments"),inputWrap=$("inputWrap");
 let busy=false, sessionToken="", sessionId="", pendingFiles=[];
 
-function add(text,who,files=[]){
+function add(text,who,files=[],artifacts=[]){
   const e=document.createElement("article");e.className="entry "+who;
   const m=document.createElement("div");m.className="mark";m.textContent=who==="you"?"YOU":"MARROW";
   const t=document.createElement("div");t.className="text";t.textContent=text;e.append(m,t);
   if(files.length){const f=document.createElement("div");f.className="attachments";files.forEach(x=>f.appendChild(renderAttachment(x,false)));e.appendChild(f)}
+  if(artifacts.length){artifacts.forEach(x=>e.appendChild(renderArtifact(x)))}
   thread.appendChild(e);
 }
 function renderAttachment(item, removable=true){
@@ -160,6 +165,7 @@ async function ask(q){
     if(r.status===401){sessionToken="";throw new Error("Session expired. Try again.")}
     if(!r.ok)throw new Error(d.error||"MARROW is unavailable.");
     pending.querySelector(".text").textContent=d.text||fallback();
+    if(Array.isArray(d.files)&&d.files.length)d.files.forEach(f=>pending.appendChild(renderArtifact(f)));
   }catch(e){pending.querySelector(".text").textContent=e.message||fallback()}
   status.textContent="PRESENT";busy=false;send.disabled=false;input.focus();thoughts.scrollTop=thoughts.scrollHeight
 }
@@ -173,7 +179,7 @@ function addFiles(list){
   }
   renderPending();
 }
-fileInput.onchange=e=>{addFiles(e.target.files);fileInput.value=""};
+fileInput.addEventListener("change",e=>{addFiles(e.target.files);fileInput.value=""});
 ["dragenter","dragover"].forEach(ev=>inputWrap.addEventListener(ev,e=>{e.preventDefault();document.body.classList.add("drop-active")}));
 ["dragleave","drop"].forEach(ev=>inputWrap.addEventListener(ev,e=>{e.preventDefault();if(ev==="drop")addFiles(e.dataTransfer.files);document.body.classList.remove("drop-active")}));
 document.addEventListener("paste",e=>{const fs=[...e.clipboardData.files];if(fs.length)addFiles(fs)});
