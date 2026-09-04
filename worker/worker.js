@@ -290,6 +290,9 @@ export default {
     if (url.pathname === "/api/attachments" && request.method === "POST") {
       return handleAttachmentUpload(request, env, cors);
     }
+    if (url.pathname === "/api/create-file" && request.method === "POST") {
+      return handleCreateFile(request, env, cors);
+    }
 
     if (url.pathname === "/api/learning" && request.method === "POST") {
       return handleLearning(request, env, cors);
@@ -723,6 +726,78 @@ async function resolveAttachments(env, sessionId, ids) {
   return out;
 }
 
+
+const FILE_MIME_TYPES = Object.freeze({
+  txt:"text/plain",md:"text/markdown",csv:"text/csv",json:"application/json",html:"text/html",htm:"text/html",
+  css:"text/css",js:"text/javascript",ts:"text/typescript",xml:"application/xml",svg:"image/svg+xml",
+  py:"text/x-python",rb:"text/x-ruby",go:"text/x-go",rs:"text/plain",sql:"application/sql",yaml:"text/yaml",yml:"text/yaml"
+});
+
+function looksLikeFileCreationRequest(text) {
+  const t=String(text||"").toLowerCase();
+  return /\b(create|make|generate|write|build|produce|prepare|export)\b/.test(t) &&
+         /\b(file|document|script|code|spreadsheet|csv|json|markdown|html|css|python|javascript|typescript|sql|template|report|list|table)\b/.test(t);
+}
+
+function fileExtension(name) {
+  const m=String(name||"").toLowerCase().match(/\.([a-z0-9]+)$/); return m?m[1]:"txt";
+}
+
+function mimeForFile(name) { return FILE_MIME_TYPES[fileExtension(name)] || "text/plain"; }
+
+function bytesToBase64(bytes) {
+  let out="";
+  const step=0x8000;
+  for(let i=0;i<bytes.length;i+=step) out += String.fromCharCode(...bytes.subarray(i,Math.min(i+step,bytes.length)));
+  return btoa(out);
+}
+
+function contentToBase64(content) { return bytesToBase64(new TextEncoder().encode(String(content||""))); }
+
+function extractJsonObject(text) {
+  const raw=String(text||"").trim().replace(/^```(?:json)?/i,"" ).replace(/```$/i,"").trim();
+  try { return JSON.parse(raw); } catch {}
+  const a=raw.indexOf("{"); const b=raw.lastIndexOf("}");
+  if(a>=0&&b>a) { try { return JSON.parse(raw.slice(a,b+1)); } catch {} }
+  return null;
+}
+
+async function generateFileArtifact(userText, env, attachments=[]) {
+  const instruction = `You are MARROW's file creation engine. The user wants a real downloadable file.\n\nUSER REQUEST:\n${String(userText||"").slice(0,12000)}\n\nReturn ONLY valid JSON with exactly these fields:\n{"filename":"...","mimeType":"...","content":"..."}\nRules:\n- Create the actual complete file content, not a description of it.\n- Choose the most useful text-based format unless the user explicitly requests another text-based format.\n- Use a sensible filename with the correct extension.\n- mimeType must match the extension.\n- Escape JSON correctly.\n- Do not put markdown fences around the JSON.\n- Do not omit requested details.`;
+  const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),28000);
+  let r;
+  try {
+    r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        contents:[{role:"user",parts:[{text:instruction},...(attachments||[]).map(a=>({fileData:{mimeType:a.mime_type,fileUri:a.gemini_uri}}))]}],
+        generationConfig:{maxOutputTokens:12000,responseMimeType:"application/json"}
+      }),signal:controller.signal
+    });
+  } catch(e) { clearTimeout(timer); throw new Error(e?.name==="AbortError"?"File creation timed out.":"File creation service is unavailable."); }
+  clearTimeout(timer);
+  const data=await r.json().catch(()=>null);
+  if(!r.ok) throw new Error("MARROW could not create the file.");
+  const raw=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("");
+  const obj=extractJsonObject(raw);
+  if(!obj?.content) throw new Error("MARROW produced no usable file content.");
+  let filename=String(obj.filename||"marrow-file.txt").replace(/[^a-zA-Z0-9._-]/g,"-").slice(0,120);
+  if(!/\.[a-z0-9]+$/i.test(filename)) filename += ".txt";
+  const content=String(obj.content);
+  const bytes=new TextEncoder().encode(content);
+  if(bytes.byteLength>1500000) throw new Error("The generated file is too large.");
+  return {name:filename,mimeType:mimeForFile(filename),sizeBytes:bytes.byteLength,contentBase64:contentToBase64(content)};
+}
+
+async function handleCreateFile(request, env, cors) {
+  if(!env.GEMINI_API_KEY||!env.SESSION_SECRET) return json({error:"Service configuration incomplete."},503,cors);
+  const session=await requireSession(request,env); if(!session) return json({error:"Session expired or invalid."},401,cors);
+  if(!(await rateLimit(request,env,`file:${session.sessionId}`,10,60000))) return json({error:"Too many file creation requests. Please wait a moment."},429,cors);
+  let body; try { body=await readJsonBounded(request); } catch { return json({error:"Invalid request."},400,cors); }
+  const prompt=String(body?.prompt||"").trim(); if(!prompt) return json({error:"No file request supplied."},400,cors);
+  try { return json({ok:true,file:await generateFileArtifact(prompt,env)},200,cors); }
+  catch(e) { console.log("File creation failure",e?.message||"unknown"); return json({error:e?.message||"MARROW could not create the file."},502,cors); }
+}
+
 async function handleMarrow(request, env, cors) {
   if (!env.GEMINI_API_KEY || !env.SESSION_SECRET) {
     return json({ error: "Service configuration incomplete." }, 503, cors);
@@ -840,12 +915,18 @@ SECURITY:
   const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
   if (!text) return json({ error: "MARROW returned no usable response." }, 502, cors);
 
+  let files=[];
+  if(looksLikeFileCreationRequest(userText)) {
+    try { files=[await generateFileArtifact(userText,env,resolvedAttachments)]; }
+    catch(e) { console.log("Inline file artifact failure",e?.message||"unknown"); }
+  }
   const sources = extractSources(data?.groundingMetadata);
   return json({
     text,
     model: MODEL,
     grounded: Boolean(sources.length),
-    sources
+    sources,
+    files
   }, 200, cors);
 }
 
