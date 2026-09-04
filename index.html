@@ -1473,5 +1473,45 @@ body{overflow:hidden!important}
 }
 </style>
 
+
+<style id="marrow-final-guard">
+html,body{width:100%!important;height:100%!important;margin:0!important;padding:0!important;background:#030508!important;color:#edf1f3!important}
+body{font-family:var(--serif)!important;overflow:hidden!important}
+.marrow-environment{width:100%!important;height:100dvh!important;min-height:100dvh!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;background:#030508!important}
+.marrow-environment *{font-synthesis:none!important}
+.marrow-environment .main{width:100%!important;flex:1 1 auto!important;min-height:0!important;overflow-x:hidden!important;overflow-y:auto!important}
+.marrow-environment .marrow-thread{width:100%!important;max-width:1000px!important;margin:0 auto!important}
+.marrow-environment .user-thought>div,.marrow-environment .marrow-response>div{font-family:var(--serif)!important;background:transparent!important;border:0!important;box-shadow:none!important}
+.marrow-environment .user-thought>div{font-size:clamp(34px,5vw,64px)!important;line-height:1.01!important;color:#edf1f3!important}
+.marrow-environment .marrow-response>div{font-size:18px!important;line-height:1.82!important;color:#d4dce1!important}
+.marrow-environment .marrow-response>div *,.marrow-environment .user-thought>div *{font-family:inherit!important;background:transparent!important;color:inherit!important;border:0!important;box-shadow:none!important;font-size:inherit!important;line-height:inherit!important}
+.marrow-environment .composer-wrap{display:block!important;visibility:visible!important;opacity:1!important}
+.marrow-environment .composer{width:100%!important;background:rgba(7,10,14,.80)!important}
+.marrow-environment .composer textarea,.marrow-environment .composer textarea:focus{display:block!important;width:100%!important;background:transparent!important;background-color:transparent!important;color:#edf1f3!important;border:0!important;outline:0!important;box-shadow:none!important;font-family:var(--serif)!important;font-size:17px!important;line-height:1.45!important;-webkit-appearance:none!important;appearance:none!important}
+.marrow-environment .composer textarea::placeholder{color:#5f6a73!important;opacity:1!important}
+.marrow-environment .send{background:#e7edf1!important;color:#0a0e12!important}
+.marrow-environment .panel.hidden,.marrow-environment .overlay.hidden,.marrow-environment .search-modal.hidden,.marrow-environment .quiet.hidden{display:none!important}
+@media(max-width:700px){
+ .marrow-environment{height:100dvh!important;min-height:100dvh!important}
+ .marrow-environment .marrow-thread{padding:44px 22px 205px!important}
+ .marrow-environment .user-thought>div{font-size:38px!important}
+ .marrow-environment .marrow-response>div{font-size:17px!important;line-height:1.76!important}
+ .marrow-environment .composer textarea{font-size:17px!important}
+}
+</style>
+<script id="marrow-ui-integrity-guard">
+(function(){
+  const forbidden=['Unpack it','Challenge it','Go deeper','Ask anything'];
+  function clean(){
+    document.querySelectorAll('.marrow-environment button,.marrow-environment div,.marrow-environment span').forEach(el=>{
+      const t=(el.textContent||'').trim();
+      if(forbidden.includes(t)&&el.parentElement)el.remove();
+    });
+  }
+  new MutationObserver(clean).observe(document.body,{childList:true,subtree:true});
+  clean();
+})();
+</script>
+
 </body>
 </html>
