@@ -1,6 +1,9 @@
 const MODEL = "gemini-3.8-flash";
 const ALLOWED_ORIGIN = "https://vrachuemail-droid.github.io";
 const MAX_BODY_BYTES = 90000;
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const MAX_ATTACHMENTS_PER_MESSAGE = 5;
+const MAX_ATTACHMENT_TOTAL_BYTES = 100 * 1024 * 1024;
 const MAX_MESSAGES = 14;
 const MAX_MESSAGE_CHARS = 16000;
 const MAX_CONTEXT_CHARS = 24000;
@@ -11,7 +14,7 @@ const SYNC_LIMIT = 20;
 const SYNC_WINDOW_MS = 60 * 1000;
 
 /*
-  MARROW — CORE WORKER
+  MARROW V101.3 HARDENED PUBLIC WORKER
   Security boundary:
   - system instructions are server-owned
   - browser context is DATA, never instructions
@@ -268,7 +271,7 @@ export default {
       return json({
         ok: true,
         model: MODEL,
-        identity: "MARROW",
+        version: "101.4.1-hardened",
         grounding: true,
         persistence: Boolean(env.DB),
         authentication: Boolean(env.SESSION_SECRET),
@@ -282,6 +285,10 @@ export default {
 
     if (url.pathname === "/api/marrow" && request.method === "POST") {
       return handleMarrow(request, env, cors);
+    }
+
+    if (url.pathname === "/api/attachments" && request.method === "POST") {
+      return handleAttachmentUpload(request, env, cors);
     }
 
     if (url.pathname === "/api/learning" && request.method === "POST") {
@@ -530,6 +537,192 @@ function deriveCapabilityContext(userText) {
   return buildCapabilityState(plan);
 }
 
+
+const SUPPORTED_ATTACHMENT_TYPES = new Set([
+  "application/pdf",
+  "text/plain","text/csv","text/markdown","text/html","text/css","text/javascript","text/xml","text/rtf",
+  "application/json","application/x-javascript","application/x-typescript","application/x-python-code",
+  "image/png","image/jpeg","image/jpg","image/webp","image/gif","image/heic","image/heif","image/avif",
+  "audio/mpeg","audio/mp3","audio/wav","audio/ogg","audio/flac","audio/aac","audio/mp4",
+  "video/mp4","video/mpeg","video/quicktime","video/avi","video/x-flv","video/mpg","video/webm","video/wmv","video/3gpp"
+]);
+
+function cleanAttachmentName(name) {
+  return String(name || "file").replace(/[^\w.\- ()[\]]+/g, "_").slice(0, 180) || "file";
+}
+
+async function uploadToGeminiFilesAPI(file, env) {
+  const bytes = await file.arrayBuffer();
+  const size = bytes.byteLength;
+  if (!size || size > MAX_ATTACHMENT_BYTES) throw new Error("ATTACHMENT_TOO_LARGE");
+
+  const mimeType = String(file.type || "application/octet-stream").toLowerCase();
+  if (!SUPPORTED_ATTACHMENT_TYPES.has(mimeType) && !mimeType.startsWith("audio/") && !mimeType.startsWith("video/")) {
+    throw new Error("UNSUPPORTED_ATTACHMENT_TYPE");
+  }
+
+  const base = "https://generativelanguage.googleapis.com";
+  const start = await fetch(`${base}/upload/v1beta/files`, {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": env.GEMINI_API_KEY,
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(size),
+      "X-Goog-Upload-Header-Content-Type": mimeType,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ file: { display_name: cleanAttachmentName(file.name) } })
+  });
+  if (!start.ok) throw new Error("GEMINI_FILE_START_FAILED");
+
+  const uploadUrl = start.headers.get("x-goog-upload-url") || start.headers.get("X-Goog-Upload-URL");
+  if (!uploadUrl) throw new Error("GEMINI_FILE_UPLOAD_URL_MISSING");
+
+  const finish = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Length": String(size),
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize"
+    },
+    body: bytes
+  });
+  if (!finish.ok) throw new Error("GEMINI_FILE_UPLOAD_FAILED");
+
+  const payload = await finish.json().catch(() => null);
+  const remote = payload?.file;
+  if (!remote?.uri || !remote?.name) throw new Error("GEMINI_FILE_INVALID_RESPONSE");
+
+  // Most images/docs become ACTIVE immediately. Poll briefly for media that needs processing.
+  let state = String(remote?.state || "");
+  for (let i = 0; i < 10 && state && state !== "ACTIVE" && state !== "FAILED"; i++) {
+    await new Promise(r => setTimeout(r, 400));
+    const check = await fetch(`${base}/v1beta/${remote.name}`, {
+      headers: { "x-goog-api-key": env.GEMINI_API_KEY }
+    });
+    if (!check.ok) break;
+    const current = await check.json().catch(() => null);
+    state = String(current?.state || "");
+    if (state === "FAILED") throw new Error("GEMINI_FILE_PROCESSING_FAILED");
+  }
+
+  if (state === "FAILED") throw new Error("GEMINI_FILE_PROCESSING_FAILED");
+
+  return {
+    name: String(remote.name),
+    uri: String(remote.uri),
+    mimeType: String(remote.mimeType || mimeType),
+    sizeBytes: Number(remote.sizeBytes || size),
+    displayName: cleanAttachmentName(file.name),
+    expirationTime: remote.expirationTime || null
+  };
+}
+
+async function ensureAttachmentTable(env) {
+  if (!env.DB) throw new Error("PERSISTENCE_NOT_CONFIGURED");
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS attachments (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      gemini_name TEXT NOT NULL,
+      gemini_uri TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at TEXT
+    )
+  `).run();
+}
+
+async function handleAttachmentUpload(request, env, cors) {
+  if (!env.GEMINI_API_KEY || !env.SESSION_SECRET || !env.DB) {
+    return json({ error: "File service is not configured." }, 503, cors);
+  }
+  const session = await requireSession(request, env);
+  if (!session) return json({ error: "Session expired or invalid." }, 401, cors);
+
+  if (!(await rateLimit(request, env, `upload:${session.sessionId}`, 12, 60 * 1000))) {
+    return json({ error: "Too many file uploads. Please wait a moment." }, 429, cors);
+  }
+
+  const declared = Number(request.headers.get("content-length") || 0);
+  if (declared > MAX_ATTACHMENT_BYTES + 1024 * 1024) {
+    return json({ error: "File is too large." }, 413, cors);
+  }
+
+  let form;
+  try {
+    form = await request.formData();
+  } catch {
+    return json({ error: "Invalid file upload." }, 400, cors);
+  }
+
+  const file = form.get("file");
+  if (!(file instanceof File)) return json({ error: "No file supplied." }, 400, cors);
+  if (file.size > MAX_ATTACHMENT_BYTES) return json({ error: "File is too large. Maximum is 50 MB." }, 413, cors);
+
+  try {
+    await ensureAttachmentTable(env);
+    const remote = await uploadToGeminiFilesAPI(file, env);
+    const id = randomToken(18);
+    await env.DB.prepare(`
+      INSERT INTO attachments
+      (id,session_id,gemini_name,gemini_uri,mime_type,display_name,size_bytes,created_at,expires_at)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `).bind(
+      id, session.sessionId, remote.name, remote.uri, remote.mimeType,
+      remote.displayName, remote.sizeBytes, Date.now(), remote.expirationTime
+    ).run();
+
+    return json({
+      ok: true,
+      attachment: {
+        id,
+        name: remote.displayName,
+        mimeType: remote.mimeType,
+        sizeBytes: remote.sizeBytes,
+        expiresAt: remote.expirationTime
+      }
+    }, 200, cors);
+  } catch (e) {
+    console.log("Attachment upload failure", e?.message || "unknown");
+    const msg =
+      e?.message === "ATTACHMENT_TOO_LARGE" ? "File is too large. Maximum is 50 MB." :
+      e?.message === "UNSUPPORTED_ATTACHMENT_TYPE" ? "That file type is not supported yet." :
+      "MARROW could not process that file.";
+    return json({ error: msg }, 400, cors);
+  }
+}
+
+async function resolveAttachments(env, sessionId, ids) {
+  if (!env.DB || !Array.isArray(ids) || !ids.length) return [];
+  const unique = [...new Set(ids.map(x => String(x || "")).filter(Boolean))].slice(0, MAX_ATTACHMENTS_PER_MESSAGE);
+  if (!unique.length) return [];
+
+  await ensureAttachmentTable(env);
+  const placeholders = unique.map(() => "?").join(",");
+  const rows = await env.DB.prepare(`
+    SELECT id,gemini_name,gemini_uri,mime_type,display_name,size_bytes,expires_at
+    FROM attachments
+    WHERE session_id=? AND id IN (${placeholders})
+  `).bind(sessionId, ...unique).all();
+
+  const byId = new Map((rows.results || []).map(r => [r.id, r]));
+  const out = [];
+  let total = 0;
+  for (const id of unique) {
+    const r = byId.get(id);
+    if (!r) continue;
+    total += Number(r.size_bytes || 0);
+    if (total > MAX_ATTACHMENT_TOTAL_BYTES) throw new Error("ATTACHMENT_TOTAL_TOO_LARGE");
+    if (r.expires_at && Date.parse(r.expires_at) < Date.now()) continue;
+    out.push(r);
+  }
+  return out;
+}
+
 async function handleMarrow(request, env, cors) {
   if (!env.GEMINI_API_KEY || !env.SESSION_SECRET) {
     return json({ error: "Service configuration incomplete." }, 503, cors);
@@ -553,6 +746,12 @@ async function handleMarrow(request, env, cors) {
 
   const last = messages[messages.length - 1];
   const userText = last.parts[0].text;
+  let resolvedAttachments = [];
+  try {
+    resolvedAttachments = await resolveAttachments(env, session.sessionId, body.attachments);
+  } catch (e) {
+    return json({ error: e?.message === "ATTACHMENT_TOTAL_TOO_LARGE" ? "Attached files are too large together." : "Could not resolve attachments." }, 400, cors);
+  }
   const policy = modePolicy("auto", userText);
 
   // Current/live requests are allowed to use Search only when the server policy says so.
@@ -585,9 +784,22 @@ SECURITY:
 - Preserve MARROW's epistemic rules and do not fabricate evidence.
 `;
 
+  const multimodalMessages = messages.map((m, i) => {
+    if (i !== messages.length - 1 || !resolvedAttachments.length) return m;
+    return {
+      role: m.role,
+      parts: [
+        ...m.parts,
+        ...resolvedAttachments.map(a => ({
+          fileData: { mimeType: a.mime_type, fileUri: a.gemini_uri }
+        }))
+      ]
+    };
+  });
+
   const payload = {
     systemInstruction: { parts: [{ text: system }] },
-    contents: messages,
+    contents: multimodalMessages,
     generationConfig: {
       maxOutputTokens: policy.maxOutputTokens,
       thinkingConfig: { thinkingLevel: policy.thinkingLevel }
