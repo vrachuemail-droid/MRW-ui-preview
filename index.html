@@ -166,6 +166,22 @@ function renderAttachment(item, removable=true){
   return a;
 }
 function renderPending(){attachmentsEl.innerHTML="";pendingFiles.forEach(f=>attachmentsEl.appendChild(renderAttachment(f,true)))}
+function renderArtifact(file){
+  const el=document.createElement("div"); el.className="artifact";
+  const name=document.createElement("div"); name.className="artifact-name"; name.textContent=file?.name||"marrow-file";
+  const meta=document.createElement("div"); meta.className="artifact-meta"; meta.textContent=(file?.mimeType||"file").split("/").pop();
+  const btn=document.createElement("button"); btn.className="artifact-download"; btn.textContent="SAVE";
+  btn.onclick=()=>{
+    try{
+      const raw=atob(file.contentBase64||""); const bytes=new Uint8Array(raw.length);
+      for(let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
+      const blob=new Blob([bytes],{type:file.mimeType||"application/octet-stream"});
+      const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=file.name||"marrow-file.txt";
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+    }catch(e){ status.textContent="SAVE FAILED"; setTimeout(()=>status.textContent="PRESENT",1600); }
+  };
+  el.append(name,meta,btn); return el;
+}
 function openField(){landing.style.display="none";thoughts.style.display="block"}
 function fallback(){return "I’m here. Give me the real problem — the thing underneath the wording — and I’ll work from there."}
 async function ensureSession(){
@@ -197,7 +213,12 @@ async function ask(q){
   busy=true;send.disabled=true;status.textContent="THINKING";openField();
   const filesForTurn=pendingFiles.map(f=>({...f}));
   let attachmentIds=[];
-  try{attachmentIds=await prepareFiles()}catch(e){status.textContent="PRESENT";send.disabled=false;busy=false;return}
+  try{attachmentIds=await prepareFiles()}catch(e){
+    status.textContent="ERROR";
+    add(e?.message||"Attachment upload failed.","marrow");
+    setTimeout(()=>status.textContent="PRESENT",2200);
+    send.disabled=false;busy=false;return;
+  }
   add(q.trim()||"Review these files.", "you", filesForTurn);
   input.value="";input.style.height="auto";pendingFiles=[];renderPending();
   const pending=document.createElement("article");pending.className="entry marrow";pending.innerHTML='<div class="mark">MARROW</div><div class="text">…</div>';thread.appendChild(pending);
