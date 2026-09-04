@@ -271,7 +271,7 @@ export default {
       return json({
         ok: true,
         model: MODEL,
-        version: "101.4.1-hardened",
+        version: "101.5.0",
         grounding: true,
         persistence: Boolean(env.DB),
         authentication: Boolean(env.SESSION_SECRET),
@@ -794,7 +794,10 @@ async function handleCreateFile(request, env, cors) {
   if(!(await rateLimit(request,env,`file:${session.sessionId}`,10,60000))) return json({error:"Too many file creation requests. Please wait a moment."},429,cors);
   let body; try { body=await readJsonBounded(request); } catch { return json({error:"Invalid request."},400,cors); }
   const prompt=String(body?.prompt||"").trim(); if(!prompt) return json({error:"No file request supplied."},400,cors);
-  try { return json({ok:true,file:await generateFileArtifact(prompt,env)},200,cors); }
+  let resolvedAttachments=[];
+  try { resolvedAttachments=await resolveAttachments(env, session.sessionId, body?.attachments); }
+  catch { return json({error:"Could not resolve attached files."},400,cors); }
+  try { return json({ok:true,file:await generateFileArtifact(prompt,env,resolvedAttachments)},200,cors); }
   catch(e) { console.log("File creation failure",e?.message||"unknown"); return json({error:e?.message||"MARROW could not create the file."},502,cors); }
 }
 
