@@ -1,10 +1,6 @@
 const MODEL = "gemini-3.8-flash";
 const ALLOWED_ORIGIN = "https://vrachuemail-droid.github.io";
-const ALLOWED_ORIGIN_PATTERN = /^https:\/\/([a-z0-9-]+\.)*github\.io$/i;
 const MAX_BODY_BYTES = 90000;
-const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
-const MAX_ATTACHMENTS_PER_MESSAGE = 5;
-const MAX_ATTACHMENT_TOTAL_BYTES = 100 * 1024 * 1024;
 const MAX_MESSAGES = 14;
 const MAX_MESSAGE_CHARS = 16000;
 const MAX_CONTEXT_CHARS = 24000;
@@ -15,7 +11,7 @@ const SYNC_LIMIT = 20;
 const SYNC_WINDOW_MS = 60 * 1000;
 
 /*
-  MARROW V101.3 HARDENED PUBLIC WORKER
+  MARROW — CORE WORKER
   Security boundary:
   - system instructions are server-owned
   - browser context is DATA, never instructions
@@ -262,25 +258,20 @@ export default {
     }
 
     const cors = corsHeaders(origin);
-    if (origin && origin !== ALLOWED_ORIGIN && !ALLOWED_ORIGIN_PATTERN.test(origin)) {
+    if (origin && origin !== ALLOWED_ORIGIN) {
       return json({ error: "Origin not allowed." }, 403, cors);
     }
 
     const url = new URL(request.url);
 
-    if (url.pathname === "/" && request.method === "GET") {
-      return new Response("MARROW operational backend", { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
-    }
-
     if (url.pathname === "/api/health" && request.method === "GET") {
       return json({
         ok: true,
         model: MODEL,
-        version: "101.5.0",
+        identity: "MARROW",
         grounding: true,
         persistence: Boolean(env.DB),
         authentication: Boolean(env.SESSION_SECRET),
-        routes: ["/api/health","/api/session","/api/marrow","/api/attachments","/api/create-file"],
         distributedRateLimit: Boolean(env.RATE_LIMITER)
       }, 200, cors);
     }
@@ -291,13 +282,6 @@ export default {
 
     if (url.pathname === "/api/marrow" && request.method === "POST") {
       return handleMarrow(request, env, cors);
-    }
-
-    if (url.pathname === "/api/attachments" && request.method === "POST") {
-      return handleAttachmentUpload(request, env, cors);
-    }
-    if (url.pathname === "/api/create-file" && request.method === "POST") {
-      return handleCreateFile(request, env, cors);
     }
 
     if (url.pathname === "/api/learning" && request.method === "POST") {
@@ -314,7 +298,7 @@ export default {
 
 function corsHeaders(origin) {
   return {
-    "Access-Control-Allow-Origin": origin || ALLOWED_ORIGIN,
+    "Access-Control-Allow-Origin": origin === ALLOWED_ORIGIN ? ALLOWED_ORIGIN : ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "POST,GET,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Vary": "Origin",
@@ -546,267 +530,6 @@ function deriveCapabilityContext(userText) {
   return buildCapabilityState(plan);
 }
 
-
-const SUPPORTED_ATTACHMENT_TYPES = new Set([
-  "application/pdf",
-  "text/plain","text/csv","text/markdown","text/html","text/css","text/javascript","text/xml","text/rtf",
-  "application/json","application/x-javascript","application/x-typescript","application/x-python-code",
-  "image/png","image/jpeg","image/jpg","image/webp","image/gif","image/heic","image/heif","image/avif",
-  "audio/mpeg","audio/mp3","audio/wav","audio/ogg","audio/flac","audio/aac","audio/mp4",
-  "video/mp4","video/mpeg","video/quicktime","video/avi","video/x-flv","video/mpg","video/webm","video/wmv","video/3gpp"
-]);
-
-function cleanAttachmentName(name) {
-  return String(name || "file").replace(/[^\w.\- ()[\]]+/g, "_").slice(0, 180) || "file";
-}
-
-async function uploadToGeminiFilesAPI(file, env) {
-  const bytes = await file.arrayBuffer();
-  const size = bytes.byteLength;
-  if (!size || size > MAX_ATTACHMENT_BYTES) throw new Error("ATTACHMENT_TOO_LARGE");
-
-  const mimeType = String(file.type || "application/octet-stream").toLowerCase();
-  if (!SUPPORTED_ATTACHMENT_TYPES.has(mimeType) && !mimeType.startsWith("audio/") && !mimeType.startsWith("video/")) {
-    throw new Error("UNSUPPORTED_ATTACHMENT_TYPE");
-  }
-
-  const base = "https://generativelanguage.googleapis.com";
-  const start = await fetch(`${base}/upload/v1beta/files`, {
-    method: "POST",
-    headers: {
-      "x-goog-api-key": env.GEMINI_API_KEY,
-      "X-Goog-Upload-Protocol": "resumable",
-      "X-Goog-Upload-Command": "start",
-      "X-Goog-Upload-Header-Content-Length": String(size),
-      "X-Goog-Upload-Header-Content-Type": mimeType,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ file: { display_name: cleanAttachmentName(file.name) } })
-  });
-  if (!start.ok) throw new Error("GEMINI_FILE_START_FAILED");
-
-  const uploadUrl = start.headers.get("x-goog-upload-url") || start.headers.get("X-Goog-Upload-URL");
-  if (!uploadUrl) throw new Error("GEMINI_FILE_UPLOAD_URL_MISSING");
-
-  const finish = await fetch(uploadUrl, {
-    method: "POST",
-    headers: {
-      "Content-Length": String(size),
-      "X-Goog-Upload-Offset": "0",
-      "X-Goog-Upload-Command": "upload, finalize"
-    },
-    body: bytes
-  });
-  if (!finish.ok) throw new Error("GEMINI_FILE_UPLOAD_FAILED");
-
-  const payload = await finish.json().catch(() => null);
-  const remote = payload?.file;
-  if (!remote?.uri || !remote?.name) throw new Error("GEMINI_FILE_INVALID_RESPONSE");
-
-  // Most images/docs become ACTIVE immediately. Poll briefly for media that needs processing.
-  let state = String(remote?.state || "");
-  for (let i = 0; i < 10 && state && state !== "ACTIVE" && state !== "FAILED"; i++) {
-    await new Promise(r => setTimeout(r, 400));
-    const check = await fetch(`${base}/v1beta/${remote.name}`, {
-      headers: { "x-goog-api-key": env.GEMINI_API_KEY }
-    });
-    if (!check.ok) break;
-    const current = await check.json().catch(() => null);
-    state = String(current?.state || "");
-    if (state === "FAILED") throw new Error("GEMINI_FILE_PROCESSING_FAILED");
-  }
-
-  if (state === "FAILED") throw new Error("GEMINI_FILE_PROCESSING_FAILED");
-
-  return {
-    name: String(remote.name),
-    uri: String(remote.uri),
-    mimeType: String(remote.mimeType || mimeType),
-    sizeBytes: Number(remote.sizeBytes || size),
-    displayName: cleanAttachmentName(file.name),
-    expirationTime: remote.expirationTime || null
-  };
-}
-
-async function ensureAttachmentTable(env) {
-  if (!env.DB) throw new Error("PERSISTENCE_NOT_CONFIGURED");
-  await env.DB.prepare(`
-    CREATE TABLE IF NOT EXISTS attachments (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      gemini_name TEXT NOT NULL,
-      gemini_uri TEXT NOT NULL,
-      mime_type TEXT NOT NULL,
-      display_name TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL,
-      created_at INTEGER NOT NULL,
-      expires_at TEXT
-    )
-  `).run();
-}
-
-async function handleAttachmentUpload(request, env, cors) {
-  if (!env.GEMINI_API_KEY || !env.SESSION_SECRET || !env.DB) {
-    return json({ error: "File service is not configured." }, 503, cors);
-  }
-  const session = await requireSession(request, env);
-  if (!session) return json({ error: "Session expired or invalid." }, 401, cors);
-
-  if (!(await rateLimit(request, env, `upload:${session.sessionId}`, 12, 60 * 1000))) {
-    return json({ error: "Too many file uploads. Please wait a moment." }, 429, cors);
-  }
-
-  const declared = Number(request.headers.get("content-length") || 0);
-  if (declared > MAX_ATTACHMENT_BYTES + 1024 * 1024) {
-    return json({ error: "File is too large." }, 413, cors);
-  }
-
-  let form;
-  try {
-    form = await request.formData();
-  } catch {
-    return json({ error: "Invalid file upload." }, 400, cors);
-  }
-
-  const file = form.get("file");
-  if (!(file instanceof File)) return json({ error: "No file supplied." }, 400, cors);
-  if (file.size > MAX_ATTACHMENT_BYTES) return json({ error: "File is too large. Maximum is 50 MB." }, 413, cors);
-
-  try {
-    await ensureAttachmentTable(env);
-    const remote = await uploadToGeminiFilesAPI(file, env);
-    const id = randomToken(18);
-    await env.DB.prepare(`
-      INSERT INTO attachments
-      (id,session_id,gemini_name,gemini_uri,mime_type,display_name,size_bytes,created_at,expires_at)
-      VALUES (?,?,?,?,?,?,?,?,?)
-    `).bind(
-      id, session.sessionId, remote.name, remote.uri, remote.mimeType,
-      remote.displayName, remote.sizeBytes, Date.now(), remote.expirationTime
-    ).run();
-
-    return json({
-      ok: true,
-      attachment: {
-        id,
-        name: remote.displayName,
-        mimeType: remote.mimeType,
-        sizeBytes: remote.sizeBytes,
-        expiresAt: remote.expirationTime
-      }
-    }, 200, cors);
-  } catch (e) {
-    console.log("Attachment upload failure", e?.message || "unknown");
-    const msg =
-      e?.message === "ATTACHMENT_TOO_LARGE" ? "File is too large. Maximum is 50 MB." :
-      e?.message === "UNSUPPORTED_ATTACHMENT_TYPE" ? "That file type is not supported yet." :
-      "MARROW could not process that file.";
-    return json({ error: msg }, 400, cors);
-  }
-}
-
-async function resolveAttachments(env, sessionId, ids) {
-  if (!env.DB || !Array.isArray(ids) || !ids.length) return [];
-  const unique = [...new Set(ids.map(x => String(x || "")).filter(Boolean))].slice(0, MAX_ATTACHMENTS_PER_MESSAGE);
-  if (!unique.length) return [];
-
-  await ensureAttachmentTable(env);
-  const placeholders = unique.map(() => "?").join(",");
-  const rows = await env.DB.prepare(`
-    SELECT id,gemini_name,gemini_uri,mime_type,display_name,size_bytes,expires_at
-    FROM attachments
-    WHERE session_id=? AND id IN (${placeholders})
-  `).bind(sessionId, ...unique).all();
-
-  const byId = new Map((rows.results || []).map(r => [r.id, r]));
-  const out = [];
-  let total = 0;
-  for (const id of unique) {
-    const r = byId.get(id);
-    if (!r) continue;
-    total += Number(r.size_bytes || 0);
-    if (total > MAX_ATTACHMENT_TOTAL_BYTES) throw new Error("ATTACHMENT_TOTAL_TOO_LARGE");
-    if (r.expires_at && Date.parse(r.expires_at) < Date.now()) continue;
-    out.push(r);
-  }
-  return out;
-}
-
-
-const FILE_MIME_TYPES = Object.freeze({
-  txt:"text/plain",md:"text/markdown",csv:"text/csv",json:"application/json",html:"text/html",htm:"text/html",
-  css:"text/css",js:"text/javascript",ts:"text/typescript",xml:"application/xml",svg:"image/svg+xml",
-  py:"text/x-python",rb:"text/x-ruby",go:"text/x-go",rs:"text/plain",sql:"application/sql",yaml:"text/yaml",yml:"text/yaml"
-});
-
-function looksLikeFileCreationRequest(text) {
-  const t=String(text||"").toLowerCase();
-  return /\b(create|make|generate|write|build|produce|prepare|export)\b/.test(t) &&
-         /\b(file|document|script|code|spreadsheet|csv|json|markdown|html|css|python|javascript|typescript|sql|template|report|list|table)\b/.test(t);
-}
-
-function fileExtension(name) {
-  const m=String(name||"").toLowerCase().match(/\.([a-z0-9]+)$/); return m?m[1]:"txt";
-}
-
-function mimeForFile(name) { return FILE_MIME_TYPES[fileExtension(name)] || "text/plain"; }
-
-function bytesToBase64(bytes) {
-  let out="";
-  const step=0x8000;
-  for(let i=0;i<bytes.length;i+=step) out += String.fromCharCode(...bytes.subarray(i,Math.min(i+step,bytes.length)));
-  return btoa(out);
-}
-
-function contentToBase64(content) { return bytesToBase64(new TextEncoder().encode(String(content||""))); }
-
-function extractJsonObject(text) {
-  const raw=String(text||"").trim().replace(/^```(?:json)?/i,"" ).replace(/```$/i,"").trim();
-  try { return JSON.parse(raw); } catch {}
-  const a=raw.indexOf("{"); const b=raw.lastIndexOf("}");
-  if(a>=0&&b>a) { try { return JSON.parse(raw.slice(a,b+1)); } catch {} }
-  return null;
-}
-
-async function generateFileArtifact(userText, env, attachments=[]) {
-  const instruction = `You are MARROW's file creation engine. The user wants a real downloadable file.\n\nUSER REQUEST:\n${String(userText||"").slice(0,12000)}\n\nReturn ONLY valid JSON with exactly these fields:\n{"filename":"...","mimeType":"...","content":"..."}\nRules:\n- Create the actual complete file content, not a description of it.\n- Choose the most useful text-based format unless the user explicitly requests another text-based format.\n- Use a sensible filename with the correct extension.\n- mimeType must match the extension.\n- Escape JSON correctly.\n- Do not put markdown fences around the JSON.\n- Do not omit requested details.`;
-  const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),28000);
-  let r;
-  try {
-    r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,{
-      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-        contents:[{role:"user",parts:[{text:instruction},...(attachments||[]).map(a=>({fileData:{mimeType:a.mime_type,fileUri:a.gemini_uri}}))]}],
-        generationConfig:{maxOutputTokens:12000,responseMimeType:"application/json"}
-      }),signal:controller.signal
-    });
-  } catch(e) { clearTimeout(timer); throw new Error(e?.name==="AbortError"?"File creation timed out.":"File creation service is unavailable."); }
-  clearTimeout(timer);
-  const data=await r.json().catch(()=>null);
-  if(!r.ok) throw new Error("MARROW could not create the file.");
-  const raw=data?.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("");
-  const obj=extractJsonObject(raw);
-  if(!obj?.content) throw new Error("MARROW produced no usable file content.");
-  let filename=String(obj.filename||"marrow-file.txt").replace(/[^a-zA-Z0-9._-]/g,"-").slice(0,120);
-  if(!/\.[a-z0-9]+$/i.test(filename)) filename += ".txt";
-  const content=String(obj.content);
-  const bytes=new TextEncoder().encode(content);
-  if(bytes.byteLength>1500000) throw new Error("The generated file is too large.");
-  return {name:filename,mimeType:mimeForFile(filename),sizeBytes:bytes.byteLength,contentBase64:contentToBase64(content)};
-}
-
-async function handleCreateFile(request, env, cors) {
-  if(!env.GEMINI_API_KEY||!env.SESSION_SECRET) return json({error:"Service configuration incomplete."},503,cors);
-  const session=await requireSession(request,env); if(!session) return json({error:"Session expired or invalid."},401,cors);
-  if(!(await rateLimit(request,env,`file:${session.sessionId}`,10,60000))) return json({error:"Too many file creation requests. Please wait a moment."},429,cors);
-  let body; try { body=await readJsonBounded(request); } catch { return json({error:"Invalid request."},400,cors); }
-  const prompt=String(body?.prompt||"").trim(); if(!prompt) return json({error:"No file request supplied."},400,cors);
-  let resolvedAttachments=[];
-  try { resolvedAttachments=await resolveAttachments(env, session.sessionId, body?.attachments); }
-  catch { return json({error:"Could not resolve attached files."},400,cors); }
-  try { return json({ok:true,file:await generateFileArtifact(prompt,env,resolvedAttachments)},200,cors); }
-  catch(e) { console.log("File creation failure",e?.message||"unknown"); return json({error:e?.message||"MARROW could not create the file."},502,cors); }
-}
-
 async function handleMarrow(request, env, cors) {
   if (!env.GEMINI_API_KEY || !env.SESSION_SECRET) {
     return json({ error: "Service configuration incomplete." }, 503, cors);
@@ -830,12 +553,6 @@ async function handleMarrow(request, env, cors) {
 
   const last = messages[messages.length - 1];
   const userText = last.parts[0].text;
-  let resolvedAttachments = [];
-  try {
-    resolvedAttachments = await resolveAttachments(env, session.sessionId, body.attachments);
-  } catch (e) {
-    return json({ error: e?.message === "ATTACHMENT_TOTAL_TOO_LARGE" ? "Attached files are too large together." : "Could not resolve attachments." }, 400, cors);
-  }
   const policy = modePolicy("auto", userText);
 
   // Current/live requests are allowed to use Search only when the server policy says so.
@@ -868,22 +585,9 @@ SECURITY:
 - Preserve MARROW's epistemic rules and do not fabricate evidence.
 `;
 
-  const multimodalMessages = messages.map((m, i) => {
-    if (i !== messages.length - 1 || !resolvedAttachments.length) return m;
-    return {
-      role: m.role,
-      parts: [
-        ...m.parts,
-        ...resolvedAttachments.map(a => ({
-          fileData: { mimeType: a.mime_type, fileUri: a.gemini_uri }
-        }))
-      ]
-    };
-  });
-
   const payload = {
     systemInstruction: { parts: [{ text: system }] },
-    contents: multimodalMessages,
+    contents: messages,
     generationConfig: {
       maxOutputTokens: policy.maxOutputTokens,
       thinkingConfig: { thinkingLevel: policy.thinkingLevel }
@@ -924,18 +628,12 @@ SECURITY:
   const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
   if (!text) return json({ error: "MARROW returned no usable response." }, 502, cors);
 
-  let files=[];
-  if(looksLikeFileCreationRequest(userText)) {
-    try { files=[await generateFileArtifact(userText,env,resolvedAttachments)]; }
-    catch(e) { console.log("Inline file artifact failure",e?.message||"unknown"); }
-  }
   const sources = extractSources(data?.groundingMetadata);
   return json({
     text,
     model: MODEL,
     grounded: Boolean(sources.length),
-    sources,
-    files
+    sources
   }, 200, cors);
 }
 
