@@ -52,7 +52,7 @@ h1{font-size:clamp(46px,8.5vw,112px);font-weight:400;line-height:.91;letter-spac
 .attach-icon{width:30px;height:30px;display:grid;place-items:center;font:300 10px "DM Mono",monospace;color:#a5a6a1;border:1px solid rgba(255,255,255,.08);flex:0 0 auto}
 .attach-meta{min-width:0;flex:1}.attach-name{font:300 10px "DM Mono",monospace;color:#b7b7b2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.attach-state{font:300 8px "DM Mono",monospace;color:#5e605d;letter-spacing:.08em;text-transform:uppercase;margin-top:3px}
 .attach-remove{border:0;background:none;color:#777;cursor:pointer;font:300 15px "DM Mono",monospace;padding:2px 4px}.attach-remove:hover{color:#eee}
-.file-trigger{position:absolute;left:12px;bottom:12px;width:42px;height:42px;border:0;background:transparent;color:#777;cursor:pointer;font:300 20px "DM Mono",monospace}.file-trigger:hover{color:#eee}
+.file-trigger{position:absolute;z-index:6;left:12px;bottom:12px;width:42px;height:42px;border:0;background:transparent;color:#777;cursor:pointer;font:300 20px "DM Mono",monospace}.file-trigger:hover{color:#eee}
 .input{padding-left:58px}
 .drop-active .input-wrap{outline:1px solid rgba(255,255,255,.24);outline-offset:6px}
 #fileInput{display:none}
@@ -78,7 +78,7 @@ h1{font-size:clamp(46px,8.5vw,112px);font-weight:400;line-height:.91;letter-spac
 <div class="input-wrap" id="inputWrap">
   <div class="attachments" id="attachments"></div>
   <textarea class="input" id="input" rows="1" placeholder="Begin." autocomplete="off" spellcheck="true"></textarea>
-  <button class="file-trigger" id="fileTrigger" aria-label="Attach file">+</button>
+  <label class="file-trigger" id="fileTrigger" for="fileInput" aria-label="Attach file">+</label>
   <input id="fileInput" type="file" multiple
     accept=".pdf,.txt,.csv,.md,.html,.css,.js,.ts,.json,.xml,.rtf,.png,.jpg,.jpeg,.webp,.gif,.heic,.heif,.avif,.mp3,.wav,.ogg,.flac,.aac,.m4a,.mp4,.mov,.avi,.webm">
   <button class="send" id="send" aria-label="Send">↗</button>
@@ -173,7 +173,6 @@ function addFiles(list){
   }
   renderPending();
 }
-fileTrigger.onclick=()=>fileInput.click();
 fileInput.onchange=e=>{addFiles(e.target.files);fileInput.value=""};
 ["dragenter","dragover"].forEach(ev=>inputWrap.addEventListener(ev,e=>{e.preventDefault();document.body.classList.add("drop-active")}));
 ["dragleave","drop"].forEach(ev=>inputWrap.addEventListener(ev,e=>{e.preventDefault();if(ev==="drop")addFiles(e.dataTransfer.files);document.body.classList.remove("drop-active")}));
