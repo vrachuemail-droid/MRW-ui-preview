@@ -518,13 +518,6 @@ body{overflow:hidden}
  .marrow-response{grid-template-columns:34px 1fr;gap:13px}
 }
 </style>
-
-<style id="marrow-artifact-v2-fixes">
-.attachment-only{display:block;color:#d8e1e7}
-.message-attachments{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}
-.message-attachment{display:inline-flex;max-width:100%;padding:7px 9px;border:1px solid rgba(220,231,239,.12);border-radius:9px;background:rgba(13,17,21,.72);font:9px 'DM Mono',monospace;color:#8996a1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.attachment-tray{position:relative;z-index:3}
-</style>
 </head>
 <body>
 <div class="app marrow-environment">
@@ -570,12 +563,10 @@ body{overflow:hidden}
   <footer class="composer-wrap">
     <div class="composer-rail">
       <button class="attach" id="attachBtn" aria-label="Attach">＋</button>
-      <input id="fileInput" type="file" multiple hidden accept=".txt,.md,.csv,.json,.html,.css,.js,.ts,.tsx,.jsx,.xml,.yaml,.yml,.py,.sql,.pdf,image/*,audio/*,video/*">
       <span class="adaptive-state"><span class="adaptive-dot"></span><b>MARROW</b><em>adaptive intelligence</em></span>
       <span class="spacer"></span>
       <button class="quiet" id="voiceBtn" aria-label="Voice">◉</button>
     </div>
-    <div id="attachmentTray" class="attachment-tray" aria-live="polite"></div>
     <div class="composer">
       <div class="composer-orbit" aria-hidden="true"></div>
       <div id="composerStatus" class="composer-status" aria-live="polite"></div>
@@ -611,8 +602,8 @@ html,body{background:var(--bg)!important}body{overflow:hidden!important}
 @media(max-width:700px){.presence-bar{height:60px;padding:0 14px}.mobile-menu{display:grid!important;width:34px!important;height:34px!important;margin-right:9px}.identity-word{font-size:11px;letter-spacing:.22em}.identity-state{display:none}.top-actions .search-btn span,.top-actions #libraryBtn{display:none}.home{padding:35px 18px 245px!important}.home:before{width:112vw;height:112vw}.home:after{width:72vw;height:72vw}.hero-copy h1{font-size:clamp(52px,15vw,78px)!important}.hero-copy p{font-size:13px!important;max-width:330px!important}.starter-row{grid-template-columns:1fr!important;width:100%!important;margin-top:40px!important}.starter{min-height:82px!important}.starter small{margin-top:5px!important}.conversation{padding:42px 18px 250px!important}.user-thought{font-size:39px!important;margin:45px 0 38px!important}.composer-wrap{width:calc(100% - 18px)!important;padding-bottom:max(10px,env(safe-area-inset-bottom))!important}.adaptive-state em{display:none}.privacy{font-size:7px!important}.composer{border-radius:18px!important;padding:12px 11px 9px!important}}
 
 /* Seamless interaction layer */
-.marrow-request-error{position:relative!important;left:auto!important;bottom:auto!important;transform:none!important;width:min(680px,calc(100% - 28px))!important;margin:18px auto!important;display:flex!important;align-items:center!important;gap:10px!important;padding:10px 13px!important;border:1px solid rgba(220,231,239,.08)!important;border-radius:12px!important;background:rgba(9,12,15,.72)!important;color:#77828d!important;font:9px 'DM Mono'!important;letter-spacing:.08em!important;backdrop-filter:blur(18px)!important;box-shadow:0 12px 45px rgba(0,0,0,.28)!important;animation:quietIn .24s ease both!important}.marrow-request-error button{border:0!important;background:transparent!important;color:#cbd7df!important;font:inherit!important;letter-spacing:inherit!important;padding:2px 0!important;cursor:pointer!important}.marrow-request-error button:hover{text-decoration:underline!important}.composer.is-busy{opacity:.94}.composer.is-busy .send{opacity:.55}.composer-status{min-height:0!important;height:0!important;overflow:hidden!important;opacity:0!important;transition:height .2s,opacity .2s,margin .2s!important;font:9px 'DM Mono'!important;letter-spacing:.09em!important;color:#69747e!important}.composer-status.show{height:18px!important;opacity:1!important;margin-bottom:5px!important}.composer-status[data-kind="working"]{color:#8fa8bb!important}.composer-status[data-kind="error"]{color:#a8afb6!important}@keyframes quietIn{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
-@media(max-width:700px){.marrow-request-error{max-width:calc(100% - 28px)}.marrow-request-error>div{overflow:hidden;text-overflow:ellipsis}.composer-status{font-size:8px!important}}
+.marrow-request-error{position:fixed!important;left:50%!important;bottom:calc(170px + env(safe-area-inset-bottom))!important;transform:translateX(-50%)!important;display:flex!important;align-items:center!important;gap:10px!important;padding:8px 12px!important;border:1px solid rgba(220,231,239,.08)!important;border-radius:999px!important;background:rgba(9,12,15,.72)!important;color:#77828d!important;font:9px 'DM Mono'!important;letter-spacing:.08em!important;backdrop-filter:blur(18px)!important;box-shadow:0 12px 45px rgba(0,0,0,.28)!important;z-index:25!important;animation:quietIn .24s ease both!important}.marrow-request-error button{border:0!important;background:transparent!important;color:#cbd7df!important;font:inherit!important;letter-spacing:inherit!important;padding:2px 0!important;cursor:pointer!important}.marrow-request-error button:hover{text-decoration:underline!important}.composer.is-busy{opacity:.94}.composer.is-busy .send{opacity:.55}.composer-status{min-height:0!important;height:0!important;overflow:hidden!important;opacity:0!important;transition:height .2s,opacity .2s,margin .2s!important;font:9px 'DM Mono'!important;letter-spacing:.09em!important;color:#69747e!important}.composer-status.show{height:18px!important;opacity:1!important;margin-bottom:5px!important}.composer-status[data-kind="working"]{color:#8fa8bb!important}.composer-status[data-kind="error"]{color:#a8afb6!important}@keyframes quietIn{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translate(-50%,0)}}
+@media(max-width:700px){.marrow-request-error{bottom:calc(155px + env(safe-area-inset-bottom))!important;max-width:calc(100% - 36px)!important;white-space:nowrap!important;overflow:hidden!important}.marrow-request-error>div{overflow:hidden!important;text-overflow:ellipsis!important}.composer-status{font-size:8px!important}}
 @media(prefers-reduced-motion:reduce){.field-glow{animation:none}.starter{transition:none}}
 </style>
 <script>
@@ -955,7 +946,7 @@ Rules:
 `;
 }
 
-async function responseFor(text, preparedAttachments=null){
+async function responseFor(text){
  const clean=text.trim().toLowerCase();
 
  // Tiny social turns stay local and instant.
@@ -1023,12 +1014,10 @@ Respond directly to the user's current message.`;
  const timer=setTimeout(()=>controller.abort(),20000);
 
  try{
-   await ensureMarrowSession();
-   const attached=preparedAttachments || await prepareAttachments();
-   const r=await fetch(MARROW_API+'/api/marrow',{
+   const r=await fetch('https://marrow-intelligence.vrachuemail.workers.dev/api/marrow',{
      method:'POST',
-     headers:{'Content-Type':'application/json','Authorization':'Bearer '+marrowSessionToken},
-     body:JSON.stringify({system,messages:contents,maxOutputTokens:450,attachments:attached.map(a=>a.id)}),
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({system,messages:contents,maxOutputTokens:450}),
      signal:controller.signal
    });
    const data=await r.json().catch(()=>({}));
@@ -1041,7 +1030,7 @@ Respond directly to the user's current message.`;
    const qc=qualityCheck(text,answer);
    if(!qc.ok) console.warn('MARROW quality advisory:',qc);
    updateCognitiveCore(text,answer);
-   return {ok:true,text:answer,model:data?.model||'marrow-backend',files:Array.isArray(data?.files)?data.files:[],qualityAdvisory:qc.issues};
+   return {ok:true,text:answer,model:data?.model||'marrow-backend',qualityAdvisory:qc.issues};
  }catch(e){
    if(e?.name==='AbortError') return {ok:false,transient:true,text:'MARROW is taking a moment.'};
    return {ok:false,transient:true,text:'MARROW is temporarily unreachable.'};
@@ -1062,8 +1051,8 @@ function renderConversation(){
  if(!messages.length){renderHome();return}
  main.innerHTML=`<section class="conversation"><div class="thread-meta"><span>THREAD</span><span>${modes[messages[0].mode||mode]}</span></div>`+
  messages.map((m,i)=>m.role==='user'
- ? `<div class="user-thought">${m.text?esc(m.text):'<span class="attachment-only">Attached file</span>'}${Array.isArray(m.attachments)&&m.attachments.length?`<div class="message-attachments">${m.attachments.map(a=>`<span class="message-attachment">${esc(a.name||'file')}</span>`).join('')}</div>`:''}</div>`
- : `<div class="marrow-response"><div class="response-sigil"><img src="${SIGIL}"></div><div><div class="response-label">MARROW</div><p>${formatReply(m.text)}</p></div></div>`).join('')+
+ ? `<div class="user-thought">${esc(m.text)}</div>`
+ : `<div class="marrow-response"><div class="response-sigil"><img src="${SIGIL}"></div><div><div class="response-label">MARROW</div><p>${formatReply(m.text)}</p>${i===messages.length-1?`<div class="actions"><button data-action="unpack">Unpack it</button><button data-action="challenge">Challenge it</button><button data-action="deeper">Go deeper</button></div>`:''}</div></div>`).join('')+
  `</section>`;
  if(requestError){
    const box=document.createElement('div');
@@ -1073,19 +1062,11 @@ function renderConversation(){
    document.getElementById('retryBtn').onclick=()=>{
      requestError='';
      const last=messages.findLast?.(m=>m.role==='user')||messages.filter(m=>m.role==='user').slice(-1)[0];
-     if(last){
-       const idx=messages.lastIndexOf(last);
-       if(idx>=0) messages.splice(idx,1);
-       draft.value=last.text||'';
-       updateSendState();
-       save(); render();
-       sendMessage(last.text||'');
-     }
+     if(last){ draft.value=last.text; send.disabled=false; sendMessage(last.text); }
    };
  }
  document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>action(b.dataset.action));
  main.scrollTop=main.scrollHeight;
- messages.filter(m=>m.role==='assistant'&&Array.isArray(m.files)&&m.files.length).slice(-1).forEach(m=>attachArtifactsToLastResponse(m.files));
  // The composer is fixed over the viewport; reserve real scroll room and
  // bring the newest thought into view after layout/keyboard adjustments.
  requestAnimationFrame(()=>{
@@ -1120,82 +1101,49 @@ async function sendMessage(textOverride){
   if(requestBusy) return;
   const input=document.getElementById('draft');
   const text=(typeof textOverride === 'string' ? textOverride : input.value).trim();
-  const hasAttachments=pendingAttachments.length>0;
-  if(!text && !hasAttachments) return;
+  if(!text) return;
 
   requestBusy=true; requestError='';
   clearTimeout(window.marrowRecoveryTimer);
-  updateSendState();
+  send.disabled=true;
   document.querySelector('.composer')?.classList.add('is-busy');
-  setComposerStatus('Preparing…','working');
+  setComposerStatus('Listening…','working');
 
   const sentMode=mode;
-  let attached=[];
+  messages.push({role:'user',text,mode:sentMode});
+  input.value='';
+  save(); render();
+  main.insertAdjacentHTML('beforeend','<div class="marrow-typing" aria-live="polite"><span></span><span></span><span></span><small>MARROW is thinking</small></div>');
+
   try{
-    // Upload before committing the turn to the conversation. A failed upload
-    // therefore cannot create a phantom user message.
-    attached=await prepareAttachments();
-
-    const requestText=text || 'Please analyze the attached file(s).';
-    const attachmentMeta=attached.map(a=>({
-      id:a.id,name:a.name,mimeType:a.mimeType,size:a.size
-    }));
-
-    messages.push({
-      role:'user',
-      text:text,
-      mode:sentMode,
-      attachments:attachmentMeta
-    });
-
-    input.value='';
-    save(); render();
-    main.insertAdjacentHTML('beforeend','<div class="marrow-typing" aria-live="polite"><span></span><span></span><span></span><small>MARROW is thinking</small></div>');
-
-    let result=await responseFor(requestText,attached);
+    let result=await responseFor(text);
     // Recover transparently from common transient capacity/network failures.
     if(result && !result.ok && result.transient){
       setComposerStatus('One moment…','working');
       await new Promise(r=>setTimeout(r,850));
-      result=await responseFor(requestText,attached);
+      result=await responseFor(text);
     }
-
     if(result && result.ok && result.text){
-      messages.push({
-        role:'assistant',
-        text:result.text,
-        model:result.model,
-        files:(result.files||[]).map(f=>({
-          name:f.name,mimeType:f.mimeType,sizeBytes:f.sizeBytes,contentBase64:f.contentBase64
-        }))
-      });
-      // The IDs are now represented by the committed turn. Clear only after
-      // the model accepted the request so retry remains possible on failure.
-      pendingAttachments.length=0;
-      renderAttachmentTray();
-      requestError='';
-      save();
+      messages.push({role:'assistant',text:result.text,model:result.model});
+      requestError=''; save();
       setComposerStatus('','working');
-      render();
-      attachArtifactsToLastResponse(result.files||[]);
     }else{
+      // Keep the user's thought intact and put it back in the composer so a
+      // failure never destroys work or forces the user to reconstruct it.
       requestError=(result && result.text) || 'MARROW is temporarily unavailable.';
       input.value=text;
-      // Keep uploaded attachments ready for an immediate retry.
-      updateSendState();
+      send.disabled=false;
       setComposerStatus('Your thought is safe.','error');
     }
   }catch(err){
-    // If upload itself failed, preserve the selected file in the tray.
-    requestError=err?.message || 'MARROW is temporarily unavailable.';
+    requestError='MARROW is temporarily unavailable.';
     input.value=text;
-    updateSendState();
+    send.disabled=false;
     setComposerStatus('Your thought is safe.','error');
   }finally{
     clearTimeout(window.marrowRecoveryTimer);
     requestBusy=false;
     document.querySelector('.composer')?.classList.remove('is-busy');
-    updateSendState();
     render();
     input.focus();
   }
@@ -1213,36 +1161,20 @@ function setComposerStatus(text, kind='working') {
 
 
 document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>{mode=b.dataset.mode;updateMode()});
-function updateSendState(){
-  send.disabled=Boolean(requestBusy)||(!draft.value.trim() && pendingAttachments.length===0);
-}
-draft.addEventListener('input',updateSendState);
+draft.addEventListener('input',()=>{send.disabled=!draft.value.trim()});
 draft.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}});
 send.onclick=()=>sendMessage();
 
 document.getElementById('menuBtn').onclick=()=>{panel.classList.toggle('hidden');overlay.classList.toggle('hidden')};
-document.getElementById('newBtn').onclick=()=>{messages=[];pendingAttachments.length=0;renderAttachmentTray();draft.value='';updateSendState();save();closePanels();render();showToast('New thought')};
-document.getElementById('clearBtn').onclick=()=>{messages=[];pendingAttachments.length=0;renderAttachmentTray();updateSendState();save();closePanels();render();showToast('Thread cleared')};
+document.getElementById('newBtn').onclick=()=>{messages=[];draft.value='';send.disabled=true;save();closePanels();render();showToast('New thought')};
+document.getElementById('clearBtn').onclick=()=>{messages=[];save();closePanels();render();showToast('Thread cleared')};
 document.getElementById('threadsBtn').onclick=()=>{closePanels();if(messages.length){renderConversation();showToast('Current thread')}else showToast('No saved threads yet')};
 overlay.onclick=closePanels;
 
 document.getElementById('searchBtn').onclick=()=>{document.getElementById('searchModal').classList.remove('hidden');overlay.classList.remove('hidden');document.getElementById('searchInput').focus()};
 document.getElementById('searchInput').oninput=e=>{let q=e.target.value.toLowerCase();let hits=messages.filter(m=>m.text.toLowerCase().includes(q));document.getElementById('searchResults').textContent=q?(hits.length?`${hits.length} matching thought${hits.length===1?'':'s'}.`:'No matching thoughts.'):'Your threads stay on this device.'};
 document.getElementById('libraryBtn').onclick=()=>showToast(messages.length?`${messages.filter(m=>m.role==='user').length} thoughts in this thread`:'Your library is empty');
-const MARROW_API='https://marrow-intelligence.vrachuemail.workers.dev';
-let marrowSessionToken=''; let marrowSessionId=''; const pendingAttachments=[];
-const fileInput=document.getElementById('fileInput'); const attachmentTray=document.getElementById('attachmentTray');
-function formatBytes(n){n=Number(n||0);if(n<1024)return `${n} B`;if(n<1048576)return `${(n/1024).toFixed(1)} KB`;return `${(n/1048576).toFixed(1)} MB`;}
-function renderAttachmentTray(){attachmentTray.innerHTML=pendingAttachments.map((a,i)=>`<div class="attachment-chip" data-state="${a.state}"><span>◇</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.name)}</span><span class="meta">${a.state==='uploading'?'UPLOADING':a.state==='ready'?formatBytes(a.size):a.state==='error'?'FAILED':'QUEUED'}</span><button type="button" data-remove-attachment="${i}" aria-label="Remove">×</button></div>`).join('');
-attachmentTray.querySelectorAll('[data-remove-attachment]').forEach(b=>b.onclick=()=>{pendingAttachments.splice(Number(b.dataset.removeAttachment),1);renderAttachmentTray();updateSendState();});updateSendState();}
-async function ensureMarrowSession(){if(marrowSessionToken)return;const r=await fetch(MARROW_API+'/api/session',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'MARROW session unavailable.');marrowSessionToken=d.sessionToken;marrowSessionId=d.sessionId;}
-async function uploadAttachment(a){a.state='uploading';renderAttachmentTray();await ensureMarrowSession();const fd=new FormData();fd.append('file',a.file,a.name);const r=await fetch(MARROW_API+'/api/attachments',{method:'POST',headers:{Authorization:'Bearer '+marrowSessionToken},body:fd});const d=await r.json().catch(()=>({}));if(r.status===401){marrowSessionToken='';marrowSessionId='';throw new Error('MARROW session expired.');}if(!r.ok)throw new Error(d.error||'File upload failed.');a.id=d.attachment.id;a.state='ready';a.mimeType=d.attachment.mimeType;a.size=Number(d.attachment.sizeBytes||a.file.size);renderAttachmentTray();return a;}
-async function prepareAttachments(){const ready=[];for(const a of [...pendingAttachments]){if(a.state==='ready'){ready.push(a);continue;}try{ready.push(await uploadAttachment(a));}catch(e){a.state='error';a.error=e.message;renderAttachmentTray();throw e;}}return ready;}
-fileInput.onchange=()=>{for(const file of [...fileInput.files]){if(pendingAttachments.length>=5)break;pendingAttachments.push({file,name:file.name,state:'queued',size:file.size,mimeType:file.type});}fileInput.value='';renderAttachmentTray();updateSendState();};
-document.getElementById('attachBtn').onclick=()=>fileInput.click();
-function renderArtifact(file){if(!file?.contentBase64)return '';return `<div class="artifact" data-artifact="${esc(file.name||'file')}"><div style="min-width:0"><div class="artifact-name">${esc(file.name||'file')}</div><div class="artifact-meta">${esc(file.mimeType||'file')} · ${formatBytes(file.sizeBytes)}</div></div><button class="artifact-save" type="button">SAVE</button></div>`;}
-function attachArtifactsToLastResponse(files){if(!Array.isArray(files)||!files.length)return;const last=[...document.querySelectorAll('.marrow-response')].pop();if(!last)return;for(const f of files){if(!f?.contentBase64)continue;const existing=[...last.querySelectorAll('.artifact')].some(n=>n.dataset.artifact===String(f.name||'file'));if(existing)continue;const el=document.createElement('div');el.innerHTML=renderArtifact(f);const node=el.firstElementChild;last.querySelector('div:last-child')?.appendChild(node);node.querySelector('.artifact-save').onclick=()=>{try{const bin=atob(f.contentBase64);const bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);const blob=new Blob([bytes],{type:f.mimeType||'application/octet-stream'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=f.name||'marrow-file';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){showToast('Could not save file');}};}}
-
+document.getElementById('attachBtn').onclick=()=>showToast('Attachments come next');
 document.getElementById('voiceBtn').onclick=()=>showToast('Voice comes next');
 document.getElementById('apiBtn').onclick=()=>{
  closePanels();
@@ -1642,9 +1574,5 @@ window.addEventListener('unhandledrejection',e=>{
 })();
 </script>
 
-
-<style id="marrow-artifact-system">
-.attachment-tray{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 8px;max-height:92px;overflow:auto}.attachment-chip{display:flex;align-items:center;gap:8px;max-width:100%;padding:7px 9px;border:1px solid rgba(220,231,239,.14);border-radius:11px;background:rgba(13,17,21,.9);color:#cbd5dd;font:10px 'DM Mono',monospace}.attachment-chip .meta{color:#69747e;font-size:8px}.attachment-chip button{border:0;background:none;color:#6f7b85;font:14px sans-serif;cursor:pointer;padding:0 2px}.attachment-chip[data-state="uploading"]{opacity:.7}.attachment-chip[data-state="error"]{border-color:rgba(210,150,150,.3)}.artifact{margin-top:18px;padding:13px 15px;border:1px solid rgba(220,231,239,.14);border-radius:14px;background:rgba(10,13,17,.72);display:flex;align-items:center;gap:14px}.artifact .artifact-name{font:11px 'DM Mono',monospace;color:#dce6ed;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.artifact .artifact-meta{font:8px 'DM Mono',monospace;color:#69747e;margin-top:4px}.artifact .artifact-save{margin-left:auto;flex:0 0 auto;border:1px solid rgba(220,231,239,.18);border-radius:9px;background:rgba(255,255,255,.025);color:#cbd8e1;padding:8px 11px;font:9px 'DM Mono',monospace;letter-spacing:.08em;cursor:pointer}.artifact .artifact-save:hover{background:rgba(185,217,255,.06)}
-</style>
 </body>
 </html>
